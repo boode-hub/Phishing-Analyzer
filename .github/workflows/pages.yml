@@ -1,0 +1,50 @@
+# Deploy the site to GitHub Pages.
+#
+# The repository was previously published with Pages' legacy branch builder,
+# which GitHub is retiring. This is the supported path: the site is a static
+# no-build app, so the repo is uploaded as-is.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it mid-publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No dependencies to install — the suites are plain node scripts.
+      - run: node tests/runner.mjs
+      - run: node tests/auth.test.mjs
+      - run: node tests/attachments.test.mjs
+      - run: node tests/ip.test.mjs
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4

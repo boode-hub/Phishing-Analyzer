@@ -2,6 +2,8 @@
 
 A fully client-side web application that analyzes suspicious emails for phishing indicators. All parsing, scoring, and analysis happens locally in your browser — your email data never leaves your machine unless you explicitly choose to look up an IOC with your own API key.
 
+**Live: https://boode-hub.github.io/Phishing-Analyzer/**
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/status-active-green.svg)
 
@@ -26,8 +28,8 @@ This tool runs entirely in your browser. Nothing is uploaded or transmitted, exc
 
 ```bash
 # Clone the repository
-git clone https://github.com/boode-hub/phishing-email-analyzer.git
-cd phishing-email-analyzer
+git clone https://github.com/boode-hub/Phishing-Analyzer.git
+cd Phishing-Analyzer
 
 # Start the local server
 node server.js
