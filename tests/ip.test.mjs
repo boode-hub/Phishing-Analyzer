@@ -177,6 +177,80 @@ body`),
   assert.equal(auth.receivedChain[0].ip, "2001:db8::1");
 });
 
+// --- sender IP resolution ------------------------------------------------
+// The originating hop frequently records a private address (NAT, internal
+// submission relay). Keep it, but walk outward to the first public address so
+// the sender's real IP is what gets shown and looked up.
+
+const chainOf = (...received) =>
+  parseAuth(
+    parseHeaders(
+      received.map((r) => `Received: ${r}`).join("\n") +
+        "\nFrom: a@example.com\n\nbody",
+    ),
+  );
+
+await test("a private originating hop walks outward to the first public IP", () => {
+  // Header order is newest first, so the last line is the origin.
+  const a = chainOf(
+    "from mx.test (mx.test [45.62.170.115]) by inbox.test; Mon, 1 Sep 2025 10:00:03 +0000",
+    "from gw.test (gw.test [203.0.113.7]) by mx.test; Mon, 1 Sep 2025 10:00:02 +0000",
+    "from pc.local (pc.local [192.168.1.50]) by gw.test; Mon, 1 Sep 2025 10:00:01 +0000",
+  );
+  assert.equal(a.senderIp.originIp, "192.168.1.50", "literal origin kept");
+  assert.equal(a.senderIp.privateIp, "192.168.1.50", "reported as internal");
+  assert.equal(a.senderIp.publicIp, "203.0.113.7", "first public going outward");
+});
+
+await test("several private hops in a row are skipped and counted", () => {
+  const a = chainOf(
+    "from mx.test (mx.test [45.62.170.115]) by inbox.test; Mon, 1 Sep 2025 10:00:04 +0000",
+    "from edge.test (edge.test [203.0.113.7]) by mx.test; Mon, 1 Sep 2025 10:00:03 +0000",
+    "from relay.local (relay.local [10.0.0.5]) by edge.test; Mon, 1 Sep 2025 10:00:02 +0000",
+    "from pc.local (pc.local [192.168.1.50]) by relay.local; Mon, 1 Sep 2025 10:00:01 +0000",
+  );
+  assert.equal(a.senderIp.privateIp, "192.168.1.50");
+  assert.equal(a.senderIp.publicIp, "203.0.113.7");
+  assert.equal(a.senderIp.privateHopsSkipped, 1, "10.0.0.5 was skipped");
+});
+
+await test("a public originating hop is used as-is", () => {
+  const a = chainOf(
+    "from mx.test (mx.test [45.62.170.115]) by inbox.test; Mon, 1 Sep 2025 10:00:02 +0000",
+    "from sender.test (sender.test [203.0.113.7]) by mx.test; Mon, 1 Sep 2025 10:00:01 +0000",
+  );
+  assert.equal(a.senderIp.publicIp, "203.0.113.7");
+  assert.equal(a.senderIp.privateIp, null, "nothing internal to report");
+  assert.equal(a.senderIp.privateHopsSkipped, 0);
+});
+
+await test("an all-private chain reports no public IP but keeps the origin", () => {
+  const a = chainOf(
+    "from relay.local (relay.local [10.0.0.5]) by inbox.local; Mon, 1 Sep 2025 10:00:02 +0000",
+    "from pc.local (pc.local [192.168.1.50]) by relay.local; Mon, 1 Sep 2025 10:00:01 +0000",
+  );
+  assert.equal(a.senderIp.publicIp, null);
+  assert.equal(a.senderIp.originIp, "192.168.1.50");
+  assert.equal(a.senderIp.privateIp, "192.168.1.50");
+});
+
+await test("invalid addresses are skipped while walking outward", () => {
+  const a = chainOf(
+    "from mx.test (mx.test [45.62.170.115]) by inbox.test; Mon, 1 Sep 2025 10:00:03 +0000",
+    "from gw.test (gw.test [203.0.113.7]) by mx.test; Mon, 1 Sep 2025 10:00:02 +0000",
+    "from weird.test (weird.test [15.21.360.10]) by gw.test; Mon, 1 Sep 2025 10:00:01 +0000",
+  );
+  // The bogus hop has no usable IP, so the origin is the next valid one out.
+  assert.equal(a.senderIp.publicIp, "203.0.113.7");
+  assert.equal(a.senderIp.originIp, "203.0.113.7");
+});
+
+await test("an empty chain resolves to nothing rather than throwing", () => {
+  const a = parseAuth(parseHeaders("From: a@example.com\n\nbody"));
+  assert.equal(a.senderIp.publicIp, null);
+  assert.equal(a.senderIp.originIp, null);
+});
+
 // --- renderer smoke test ---------------------------------------------------
 // renderIOCs only writes to container.innerHTML, so it runs without a DOM.
 // A previous edit referenced a const before its declaration, which threw at

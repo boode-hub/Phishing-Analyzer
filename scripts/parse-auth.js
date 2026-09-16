@@ -1,7 +1,7 @@
 // Authentication Parsing Module
 // SPF/DKIM/DMARC parsing and DMARC-style domain alignment
 
-import { isValidIP, isPrivateIP, findIPs } from "./ip-utils.js";
+import { isValidIP, isPrivateIP, isRoutableIP, findIPs } from "./ip-utils.js";
 //
 // Design notes, because the accuracy of this file is the accuracy of the tool:
 //
@@ -79,6 +79,7 @@ export function parseAuth(headers) {
 
   const domainAlignment = checkDomainAlignment(headers, signatures, spf, dkim);
   const receivedChain = parseReceivedChain(headers.received);
+  const senderIp = resolveSenderIp(receivedChain);
 
   const trust = assessHeaderTrust(authoritative, lower, arAll, headers);
 
@@ -106,6 +107,7 @@ export function parseAuth(headers) {
     signatures,
     domainAlignment,
     receivedChain,
+    senderIp,
     trust,
     overallStatus,
   };
@@ -709,6 +711,49 @@ function parseReceivedChain(receivedHeaders) {
   return hops;
 }
 
+
+/**
+ * Work out the sender's public IP from the Received chain.
+ *
+ * Received headers are prepended, so the last entry is where the message
+ * originated — and that hop very often records a private address: the sender's
+ * workstation behind NAT, or an internal submission relay. A private address
+ * identifies nobody and cannot be looked up, so keep it for the internal trail
+ * but keep walking outward (toward the receiving end) until a routable address
+ * appears. That is where the message actually left the sender's network, and
+ * the address worth checking against reputation data.
+ */
+export function resolveSenderIp(chain) {
+  const result = {
+    publicIp: null,
+    publicHop: null,
+    privateIp: null,
+    originIp: null,
+    privateHopsSkipped: 0,
+  };
+  if (!Array.isArray(chain)) return result;
+
+  // Walk from the origin (end of the array) toward the receiving server.
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const hop = chain[i];
+    if (!isValidIP(hop.ip)) continue;
+
+    if (result.originIp === null) {
+      result.originIp = hop.ip;
+      if (isPrivateIP(hop.ip)) result.privateIp = hop.ip;
+    } else if (isPrivateIP(hop.ip)) {
+      result.privateHopsSkipped++;
+    }
+
+    if (isRoutableIP(hop.ip)) {
+      result.publicIp = hop.ip;
+      result.publicHop = hop;
+      break;
+    }
+  }
+
+  return result;
+}
 
 // ===== Overall status =====
 

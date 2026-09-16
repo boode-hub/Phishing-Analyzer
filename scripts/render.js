@@ -1,4 +1,4 @@
-import { isValidIP, isPrivateIP, isRoutableIP, findIPs } from "./ip-utils.js";
+import { isValidIP, isRoutableIP, findIPs } from "./ip-utils.js";
 
 // Rows rendered per IOC table before the rest are collapsed behind a button.
 // A bulk HTML email routinely carries 100+ links; rendering them all built
@@ -125,26 +125,38 @@ export async function renderSummary(container, analysis, apiKeys) {
   // so the LAST one is where the message entered the mail system. The card
   // previously showed it under the misleading label "Last Hop".
   const chain = auth?.receivedChain || [];
-  const origin = chain.find((h) => h.isOrigin && isValidIP(h.ip)) || null;
+  const senderIp = auth?.senderIp || {};
   const relay = chain.find((h) => isValidIP(h.ip)) || null;
-  const originIp = origin?.ip || (isValidIP(sip) ? sip : null);
-  const relayIp = relay?.ip || null;
-  const showRelay = relayIp && relayIp !== originIp;
-  const originLabel = originIp || "Not determinable from these headers";
 
-  html += `<div class="summary-ip-card ${isPrivateIP(originIp) ? "risk-border-high" : "risk-border-neutral"}" data-lookup-scope>
+  // The public address the message left the sender's network from. When the
+  // originating hop is private (NAT, internal submission relay) the walk
+  // continues outward until a routable address is found.
+  const originIp = senderIp.publicIp || (isRoutableIP(sip) ? sip : null);
+  const originHost = senderIp.publicHop?.from || null;
+  const internalIp = senderIp.privateIp;
+  const relayIp = relay?.ip || null;
+  const showRelay = relayIp && relayIp !== originIp && relayIp !== internalIp;
+  const originLabel = originIp || "No public IP recorded in these headers";
+
+  // originIp is public by construction now, so the border flags the odd case:
+  // a chain that records no public address at all.
+  html += `<div class="summary-ip-card ${chain.length && !originIp ? "risk-border-high" : "risk-border-neutral"}" data-lookup-scope>
     <div class="card-header">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ICONS.globe}</svg>
       <h3>Sender IP</h3>
     </div>
     <div class="ip-primary">
-      <div class="ip-label">Originating IP <span class="ip-hint">(where the message entered the mail system)</span></div>
+      <div class="ip-label">Originating IP <span class="ip-hint">(the sender's public address)</span></div>
       <div class="ip-value-row">
         <span class="ip-value mono ${originIp ? "" : "muted"}">${esc(originLabel)}</span>
         ${ipLookupButtons(originIp, apiKeys)}
       </div>
-      ${origin?.from ? `<div class="ip-host mono">${esc(origin.from)}</div>` : ""}
-      ${isPrivateIP(originIp) ? '<div class="ip-warning">&#9888; Private/reserved address</div>' : ""}
+      ${originHost ? `<div class="ip-host mono">${esc(originHost)}</div>` : ""}
+      ${
+        internalIp
+          ? `<div class="ip-internal">First hop recorded <span class="mono">${esc(internalIp)}</span>, a private address${senderIp.privateHopsSkipped ? ` (plus ${senderIp.privateHopsSkipped} more private hop${senderIp.privateHopsSkipped > 1 ? "s" : ""})` : ""}. ${originIp ? "Walked outward to the first public address above." : "No public address appears anywhere in the chain."}</div>`
+          : ""
+      }
     </div>
     ${
       showRelay

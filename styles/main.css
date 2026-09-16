@@ -1971,3 +1971,14 @@ mark.highlight-credential {
   font-weight: 500;
   font-style: italic;
 }
+
+/* Explains that the originating IP shown is not the literal first hop, because
+   that hop recorded a private address. */
+.ip-internal {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+  line-height: 1.5;
+  padding-left: 0.625rem;
+  border-left: 2px solid var(--border);
+}
