@@ -253,7 +253,10 @@ assertTruthy(spoofedBody.html, "Spoofed body: Has HTML");
 assertTruthy(spoofedBody.text, "Spoofed body: Has extracted text");
 assertContains(spoofedBody.text, "PayPal", "Spoofed body: Contains PayPal");
 assertArrayLength(spoofedBody.links, 1, "Spoofed body: Link count");
-assertTruthy(spoofedBody.links[0].isMismatch, "Spoofed body: Link is mismatch");
+// "click here to verify" is ordinary link text, not a URL pretending to be a
+// different one. This assertion used to require it be flagged — the false
+// positive that marked every newsletter's "Click here" as a mismatched link.
+assertTruthy(!spoofedBody.links[0].isMismatch, "Spoofed body: plain link text is not a mismatch");
 
 // Test 12: Parse urgency email body
 const urgencyBody = parseBody(urgencyEmail);
@@ -333,18 +336,22 @@ assertEqual(
 // Test 17: Extract IOCs from spoofed email
 const spoofedIOCs = extractIOCs(spoofedHeaders, spoofedBody);
 assertArrayLength(spoofedIOCs.urls, 1, "Spoofed IOCs: URL count");
+// See the note on the body test above: the link text is not a URL, so there is
+// no display/destination mismatch, and a plain http URL carries no risk flag
+// of its own. The message is still High Risk on its authentication failures.
 assertArrayLength(
   spoofedIOCs.mismatchedLinks,
-  1,
-  "Spoofed IOCs: Mismatched link count",
+  0,
+  "Spoofed IOCs: no mismatched link for plain link text",
+);
+assertArrayLength(
+  spoofedIOCs.urls[0].risks,
+  0,
+  "Spoofed IOCs: plain URL carries no risk flags",
 );
 assertTruthy(
-  spoofedIOCs.urls[0].risks.length > 0,
-  "Spoofed IOCs: URL has risks",
-);
-assertTruthy(
-  spoofedIOCs.urls[0].riskFlags.length > 0,
-  "Spoofed IOCs: URL has risk flags",
+  Array.isArray(spoofedIOCs.urls[0].riskFlags),
+  "Spoofed IOCs: URL has a risk flag list",
 );
 assertTruthy(
   spoofedIOCs.urls[0].defanged,

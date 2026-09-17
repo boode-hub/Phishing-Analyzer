@@ -19,9 +19,10 @@ const TIER_SUSPICIOUS = 30;
  * @param {Object} auth - Authentication analysis
  * @param {Object} iocs - Extracted IOCs
  * @param {Object} languageAnalysis - Language analysis results
+ * @param {Object} [headers] - Parsed headers, for evidence-quality caveats
  * @returns {Object} Risk score and breakdown
  */
-export function calculateScore(auth, iocs, languageAnalysis) {
+export function calculateScore(auth, iocs, languageAnalysis, headers) {
   const authResult = scoreAuthentication(auth);
   const iocResult = scoreIOCs(iocs);
   const langResult = scoreLanguage(languageAnalysis);
@@ -54,6 +55,13 @@ export function calculateScore(auth, iocs, languageAnalysis) {
           : "Low Risk",
     score: total,
     reasons: [...new Set(reasons)],
+    // Reasons kept per category, so the verdict can show why each bar is high.
+    reasonGroups: {
+      auth: [...new Set(authResult.reasons)],
+      iocs: [...new Set(iocResult.reasons)],
+      language: [...new Set(langResult.reasons)],
+    },
+    caveats: evidenceCaveats(auth, headers),
     breakdown: {
       // "auth" is the key the renderer reads. "authentication" is kept as an
       // alias so nothing that reached for the old name silently reads 0.
@@ -67,6 +75,37 @@ export function calculateScore(auth, iocs, languageAnalysis) {
 
 function clamp(n) {
   return Math.max(0, Math.min(Math.round(n), 100));
+}
+
+/**
+ * Situations where a low score means "not enough to judge", not "safe".
+ *
+ * The most common way a user submits a suspicious message is by forwarding it,
+ * and a forward's headers describe the forwarder — the original sender's
+ * authentication and routing are gone. Without that evidence a Low Risk result
+ * would read as a clean bill of health it has not earned.
+ */
+function evidenceCaveats(auth, headers) {
+  const caveats = [];
+  const hasAuth =
+    (auth?.trust?.authResultsCount || 0) > 0 || (auth?.spf?.sources?.length || 0) > 0;
+  const hasRouting = (auth?.receivedChain?.length || 0) > 0;
+
+  if (/^\s*(fw|fwd)\s*:/i.test(headers?.subject || "")) {
+    caveats.push(
+      "This looks like a forwarded message. Its headers describe the forward, not the original — attach or paste the original message source for a reliable verdict.",
+    );
+  }
+  if (!hasAuth && !hasRouting) {
+    caveats.push(
+      "No authentication or routing headers were found, so sender authenticity could not be checked. A low score here is not a clean result.",
+    );
+  } else if (!hasAuth) {
+    caveats.push(
+      "No SPF, DKIM or DMARC results were recorded, so sender authenticity could not be verified.",
+    );
+  }
+  return caveats;
 }
 
 /**

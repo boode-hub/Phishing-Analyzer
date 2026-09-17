@@ -2,7 +2,14 @@
 // Extract URLs, domains, IPs, emails, and attachments
 // with risk flagging
 
-import { isValidIP, isValidIPv4, isPrivateIP, findIPs } from "./ip-utils.js";
+import {
+  isValidIP,
+  isValidIPv4,
+  isPrivateIP,
+  findIPs,
+  receivedFromIP,
+} from "./ip-utils.js";
+import { unwrapRedirect } from "./url-decode.js";
 
 // Known URL shorteners
 const URL_SHORTENERS = [
@@ -97,6 +104,9 @@ export function extractIOCs(headers, body) {
     extractFromBody(body, iocs);
   }
 
+  addUnwrappedDestinations(iocs);
+  collectDomains(iocs, headers);
+
   // Deduplicate and flag
   deduplicateAndFlag(iocs);
 
@@ -140,20 +150,10 @@ function extractFromHeaders(headers, iocs) {
     }
   }
 
-  // Extract IPs from Received headers. Prefer the bracketed address the
-  // receiving server recorded, then any valid address in the from-clause.
+  // Extract the sending host's IP from each Received header.
   for (const received of headers.received || []) {
-    const bracketed = [...String(received).matchAll(/\[([^\]]+)\]/g)]
-      .map((m) => m[1].replace(/^IPv6:/i, "").trim())
-      .find(isValidIP);
-
-    if (bracketed) {
-      trackIp(bracketed, "Received");
-      continue;
-    }
-    const fromClause = String(received).match(/\bfrom\b([^;]*)/i)?.[1] || "";
-    const found = findIPs(fromClause)[0];
-    if (found) trackIp(found, "Received");
+    const ip = receivedFromIP(received);
+    if (ip) trackIp(ip, "Received");
   }
 
   // Now push unique IPs with combined source info
@@ -192,10 +192,18 @@ function extractFromBody(body, iocs) {
   // Also check HTML links
   if (body.links) {
     for (const link of body.links) {
-      if (!iocs.urls.find((u) => u.value === link.href)) {
+      const existing = iocs.urls.find((u) => u.value === link.href);
+      if (existing) {
+        // The same URL can appear as plain text and as an anchor; keep the
+        // mismatch finding from whichever occurrence has one. For an HTML-only
+        // message the text scan runs over raw markup and reaches a pixel's URL
+        // first, so the more specific resource label wins.
+        existing.isMismatch = existing.isMismatch || link.isMismatch;
+        if (link.resource) existing.source = "Remote resource (loads on open)";
+      } else {
         iocs.urls.push({
           value: link.href,
-          source: "Body",
+          source: link.resource ? "Remote resource (loads on open)" : "Body",
           text: link.text,
           isMismatch: link.isMismatch,
         });
@@ -240,6 +248,57 @@ function extractFromBody(body, iocs) {
   }
 }
 
+
+/**
+ * A link rewritten by Safe Links or Proofpoint shows only the gateway's host,
+ * so every risk check ran against the gateway and the real destination — the
+ * punycode lookalike, the raw IP — was never examined. Add the unwrapped
+ * destination as an IOC of its own so it is flagged, scored, and looked up.
+ */
+function addUnwrappedDestinations(iocs) {
+  for (const url of [...iocs.urls]) {
+    const r = unwrapRedirect(url.value);
+    if (!r || r.output === url.value || !/^https?:\/\//i.test(r.output)) continue;
+    if (iocs.urls.some((u) => u.value === r.output)) continue;
+    iocs.urls.push({
+      value: r.output,
+      source: r.note ? r.note.replace(/^Unwrapped: /, "Unwrapped via ") : "Unwrapped",
+      // The mismatch belongs to the anchor that displayed the misleading text;
+      // copying it here would score the same deception twice.
+      isMismatch: false,
+      unwrappedFrom: url.value,
+    });
+  }
+}
+
+/**
+ * Domains from every URL (including unwrapped destinations) and from the
+ * sender addresses. Previously only the Message-ID domain was listed.
+ */
+function collectDomains(iocs, headers) {
+  const add = (domain, source) => {
+    if (!domain) return;
+    const d = domain.toLowerCase().replace(/\.$/, "");
+    if (isValidIP(d.replace(/^\[|\]$/g, "")) || !d.includes(".")) return;
+    iocs.domains.push({ value: d, source });
+  };
+
+  for (const [header, label] of [
+    ["from", "From"],
+    ["replyTo", "Reply-To"],
+    ["returnPath", "Return-Path"],
+  ]) {
+    add(headers?.[header]?.email?.split("@")[1], label);
+  }
+
+  for (const url of iocs.urls) {
+    try {
+      add(new URL(url.value).hostname, url.unwrappedFrom ? "Unwrapped URL" : "URL");
+    } catch {
+      /* not a parseable URL */
+    }
+  }
+}
 
 /**
  * Deduplicate and add risk flags

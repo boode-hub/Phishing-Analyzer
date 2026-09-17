@@ -266,6 +266,18 @@ body`);
   assert.equal(spfRow.aligned, false, "evil.test does not align with spglobal.com");
 });
 
+test("Microsoft's header.d=none is not treated as a signing domain", () => {
+  const a = analyze(`Authentication-Results: spf=fail (sender IP is 203.0.113.50) smtp.mailfrom=paypa1-alerts.test; dkim=none (message not signed) header.d=none;dmarc=fail action=quarantine header.from=paypal.com
+From: service@paypal.com
+
+body`);
+  assert.equal(a.dkim.domain, null);
+  assert.ok(
+    !a.domainAlignment.entries.some((e) => e.domain === "none"),
+    "was producing 'DKIM domain (none) is not aligned'",
+  );
+});
+
 test("renderAuth shows both SPF headers and a spelled-out alignment comparison", () => {
   const a = analyze(`${MS_AR}
 ${MS_RSPF}
@@ -479,6 +491,31 @@ test("every scored point produces a reason", () => {
 });
 
 // ---------------------------------------------------------------------------
+
+test("a verdict without authentication or routing evidence carries a caveat", () => {
+  const empty = { urls: [], domains: [], ips: [], emails: [], attachments: [] };
+  const bare = analyze("From: a@x.test\nSubject: hi\n\nbody");
+  const s = calculateScore(bare, empty, null, { subject: "hi" });
+  assert.ok(s.caveats.some((c) => /not a clean result/.test(c)));
+});
+
+test("a forwarded message is flagged as unreliable evidence", () => {
+  const empty = { urls: [], domains: [], ips: [], emails: [], attachments: [] };
+  const s = calculateScore(passingAuth(), empty, null, { subject: "Fwd: Your account" });
+  assert.ok(s.caveats.some((c) => /forwarded/.test(c)));
+});
+
+test("a fully authenticated message carries no caveat", () => {
+  const empty = { urls: [], domains: [], ips: [], emails: [], attachments: [] };
+  const s = calculateScore(passingAuth(), empty, null, { subject: "Invoice" });
+  assert.deepEqual(s.caveats, []);
+});
+
+test("reasons are also grouped by category", () => {
+  const s = calculateScore(passingAuth(), { urls: [{ value: "https://bit.ly/x", risks: [{ type: "url-shortener", level: "medium" }] }], domains: [], ips: [], emails: [], attachments: [] }, null);
+  assert.ok(s.reasonGroups.iocs.length === 1);
+  assert.deepEqual(s.reasonGroups.language, []);
+});
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 for (const f of failures) console.error(`  FAIL  ${f.name}\n        ${f.message}`);

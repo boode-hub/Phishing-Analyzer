@@ -101,6 +101,24 @@ export function isRoutableIP(value) {
 }
 
 /**
+ * The address of the host that SENT a hop, from one Received header.
+ *
+ * "Received: from A (A [1.2.3.4]) by B (B [5.6.7.8]); date" — only the from
+ * clause describes the sender; the by clause is the server that received it.
+ * Searching the whole header let B's address be reported as the sender's
+ * whenever A's clause carried no address of its own. Microsoft writes the
+ * address bare in parentheses rather than brackets, so both forms are read.
+ */
+export function receivedFromIP(header) {
+  const fromClause =
+    String(header).match(/\bfrom\b([\s\S]*?)(?=\bby\b|\bwith\b|;|$)/i)?.[1] || "";
+  const bracketed = [...fromClause.matchAll(/\[([^\]]+)\]/g)]
+    .map((m) => m[1].replace(/^IPv6:/i, "").trim())
+    .find(isValidIP);
+  return bracketed || findIPs(fromClause)[0] || null;
+}
+
+/**
  * Pull every genuine IP out of arbitrary text, in order of appearance.
  * Candidates that fail validation are discarded rather than reported.
  */

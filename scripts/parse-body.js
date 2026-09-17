@@ -1,6 +1,9 @@
 // Body Parsing Module
 // MIME body extraction, decoding, and link extraction
 
+import { orgDomain } from "./parse-auth.js";
+import { unwrapRedirect, htmlEntityDecode } from "./url-decode.js";
+
 /**
  * Parse email body from raw input
  * @param {string} rawInput - Raw email (headers + body)
@@ -295,25 +298,73 @@ function stripHtml(html) {
 }
 
 /**
- * Extract links from HTML
+ * Extract links from HTML: anchors, plus remote resources the message loads on
+ * open (tracking pixels, remote images, scripts, frames). Those resources are
+ * IOCs in their own right and often carry the recipient's identity.
  */
 function extractLinksFromHtml(html) {
   const links = [];
-  const linkPattern = /<a[^>]+href=["']([^"']+)["'][^>]*>([^<]*)<\/a>/gi;
+
+  // [\s\S]*? so anchors wrapping other markup (<a><span>…</span></a>) are
+  // still captured; the old [^<]* silently skipped them.
+  const linkPattern = /<a\b[^>]*?\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let match;
-
   while ((match = linkPattern.exec(html)) !== null) {
-    const href = match[1].trim();
+    const href = decodeEntities(match[1].trim());
     const text = stripHtml(match[2]).trim();
-
     links.push({
       href,
       text: text || href,
-      isMismatch: text && text !== href && !href.startsWith("mailto:"),
+      isMismatch: isDeceptiveLink(text, href),
+    });
+  }
+
+  const resourcePattern =
+    /<(?:img|script|iframe|embed|source|input|body|table|td)\b[^>]*?\b(?:src|background)\s*=\s*["'](https?:\/\/[^"']+)["']/gi;
+  while ((match = resourcePattern.exec(html)) !== null) {
+    links.push({
+      href: decodeEntities(match[1].trim()),
+      text: "",
+      isMismatch: false,
+      resource: true,
     });
   }
 
   return links;
+}
+
+/**
+ * A link is deceptive only when its visible text itself looks like a link and
+ * points somewhere else. "View invoice" is ordinary link text; flagging it made
+ * every newsletter look like phishing. The destination is compared after
+ * unwrapping, so a gateway rewrite (Safe Links) is not itself a mismatch but a
+ * rewrite hiding a different domain is.
+ */
+function isDeceptiveLink(text, href) {
+  if (!text || /^(mailto|tel|#)/i.test(href)) return false;
+  const shown = hostOf(text);
+  if (!shown) return false;
+  const unwrapped = unwrapRedirect(href);
+  const real = hostOf(unwrapped ? unwrapped.output : href);
+  if (!real) return false;
+  return orgDomain(shown) !== orgDomain(real);
+}
+
+function hostOf(value) {
+  const t = String(value).trim();
+  let candidate = null;
+  if (/^https?:\/\//i.test(t)) candidate = t;
+  else if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(t)) candidate = `http://${t}`;
+  if (!candidate) return null;
+  try {
+    return new URL(candidate).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+function decodeEntities(s) {
+  return htmlEntityDecode(s)?.output ?? s;
 }
 
 /**

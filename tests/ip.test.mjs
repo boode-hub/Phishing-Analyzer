@@ -177,6 +177,29 @@ body`),
   assert.equal(auth.receivedChain[0].ip, "2001:db8::1");
 });
 
+// --- by-clause attribution ----------------------------------------------------
+
+await test("the receiving server's IP in the by-clause is never the sender's", async () => {
+  const { receivedFromIP } = await import("../scripts/ip-utils.js");
+  assert.equal(
+    receivedFromIP("from unknown.test by mx.test (mx.test [198.51.100.8]); Mon, 1 Sep 2025 10:00:00 +0000"),
+    null,
+    "the only IP belongs to the receiver",
+  );
+  assert.equal(
+    receivedFromIP("from a.test (a.test [203.0.113.5]) by mx.test (mx.test [198.51.100.8]); date"),
+    "203.0.113.5",
+  );
+});
+
+await test("Microsoft's bare parenthesised IPs are read from the from-clause", async () => {
+  const { receivedFromIP } = await import("../scripts/ip-utils.js");
+  assert.equal(
+    receivedFromIP("from relay.test (40.107.22.61) by DM6PR12MB.mail.protection.outlook.com (10.167.8.14) with Microsoft SMTP Server; date"),
+    "40.107.22.61",
+  );
+});
+
 // --- sender IP resolution ------------------------------------------------
 // The originating hop frequently records a private address (NAT, internal
 // submission relay). Keep it, but walk outward to the first public address so

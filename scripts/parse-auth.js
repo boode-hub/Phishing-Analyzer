@@ -1,7 +1,13 @@
 // Authentication Parsing Module
 // SPF/DKIM/DMARC parsing and DMARC-style domain alignment
 
-import { isValidIP, isPrivateIP, isRoutableIP, findIPs } from "./ip-utils.js";
+import {
+  isValidIP,
+  isPrivateIP,
+  isRoutableIP,
+  findIPs,
+  receivedFromIP,
+} from "./ip-utils.js";
 //
 // Design notes, because the accuracy of this file is the accuracy of the tool:
 //
@@ -382,9 +388,12 @@ function resolveDKIM(authoritative, signatures) {
     // the passing one, since that is what DMARC will evaluate.
     const passing = clauses.find((c) => normalizeAuthStatus(c.result) === "pass");
     const chosen = passing || clauses[0];
+    // Microsoft writes "dkim=none (message not signed) header.d=none" — the
+    // word "none" is not a signing domain, and treating it as one produced a
+    // bogus "DKIM domain (none) is not aligned" finding.
     const domain =
-      chosen.props["header.d"] ||
-      chosen.props["header.i"]?.replace(/^@/, "") ||
+      realDomain(chosen.props["header.d"]) ||
+      realDomain(chosen.props["header.i"]?.replace(/^@/, "")) ||
       signatures[0]?.domain ||
       null;
     return {
@@ -392,7 +401,7 @@ function resolveDKIM(authoritative, signatures) {
       rawResult: chosen.result,
       domain: domain ? domain.toLowerCase() : null,
       domains: clauses
-        .map((c) => c.props["header.d"])
+        .map((c) => realDomain(c.props["header.d"]))
         .filter(Boolean)
         .map((d) => d.toLowerCase()),
       signatureCount: signatures.length,
@@ -740,21 +749,8 @@ function parseReceivedChain(receivedHeaders) {
       warnings: [],
     };
 
-    // Prefer a bracketed address (what the receiving server actually saw),
-    // then any valid address in the from-clause, then anywhere in the header.
-    // Each candidate is validated: a Received header is full of dotted-quad
-    // lookalikes — queue ids, versions, timestamps — and the old pattern
-    // accepted anything shaped like four numbers, including "15.21.360.10".
-    const bracketed = [...clean.matchAll(/\[([^\]]+)\]/g)]
-      .map((m) => m[1].replace(/^IPv6:/i, "").trim())
-      .find(isValidIP);
-
-    if (bracketed) {
-      hop.ip = bracketed;
-    } else {
-      const fromClause = clean.match(/\bfrom\b([^;]*)/i)?.[1] || "";
-      hop.ip = findIPs(fromClause)[0] || findIPs(clean)[0] || null;
-    }
+    // The sending host's address, validated, from the from-clause only.
+    hop.ip = receivedFromIP(clean);
 
     const fromMatch = clean.match(/\bfrom\s+([^\s;()\[\]]+)/i);
     if (fromMatch) hop.from = fromMatch[1];
@@ -943,6 +939,13 @@ function identityDomain(identity) {
   const s = String(identity).trim();
   if (s.includes("@")) return domainPart(s);
   return s.replace(/[<>\s;,]+/g, "").toLowerCase() || null;
+}
+
+/** A domain value, or null for placeholders like "none". */
+function realDomain(value) {
+  if (!value) return null;
+  const v = String(value).trim();
+  return /^(none|null|n\/a|-|unknown)$/i.test(v) || !v.includes(".") ? null : v;
 }
 
 function matchValue(s, re) {

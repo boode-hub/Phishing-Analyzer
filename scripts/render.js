@@ -1,4 +1,5 @@
 import { isValidIP, isRoutableIP, findIPs } from "./ip-utils.js";
+import { URL_DECODERS, detectEncodings, safeRun } from "./url-decode.js";
 
 // Rows rendered per IOC table before the rest are collapsed behind a button.
 // A bulk HTML email routinely carries 100+ links; rendering them all built
@@ -12,18 +13,14 @@ export async function renderSummary(container, analysis, apiKeys) {
   const iocs = analysis.iocs;
   const lang = analysis.languageAnalysis;
 
-  const from = h.from?.email || h.from || "N/A";
-  const replyTo =
-    h.replyTo?.email ||
-    h.replyTo ||
-    h.returnPath?.email ||
-    h.returnPath ||
-    "N/A";
-  const subject = h.subject || "N/A";
+  const from = h.from?.email || "N/A";
+  // Only a real Reply-To header. This used to fall back to Return-Path, so the
+  // card labelled "Reply-To" silently showed a different header's address.
+  const replyTo = h.replyTo?.email || null;
   const sip = extractSenderIP(h);
   const sd = extractDomain(from);
-  const rd = extractDomain(replyTo);
-  const dm = rd !== sd && rd !== "N/A";
+  const rd = replyTo ? extractDomain(replyTo) : null;
+  const dm = !!rd && rd !== sd;
 
   // Get auth statuses
   const spfStatus = auth?.mechanisms?.spf?.status || "unknown";
@@ -51,6 +48,19 @@ export async function renderSummary(container, analysis, apiKeys) {
   const hasHighRisk = (iocs?.urls || []).some(u => u.riskFlags?.some(f => f.type === "high"));
 
   let html = '';
+
+  // === VERDICT STRIP ===
+  // The one question the summary exists to answer, answered first. It was
+  // previously only in the separate Analysis Result panel further down.
+  const sc = analysis.score || {};
+  const tierClass =
+    sc.tier === "High Risk" ? "tier-high" : sc.tier === "Suspicious" ? "tier-medium" : "tier-low";
+  const topReasons = (sc.reasons || []).slice(0, 3);
+  html += `<div class="summary-verdict ${tierClass}">
+    <div class="summary-verdict-main"><span class="summary-verdict-tier">${esc(sc.tier || "Unknown")}</span><span class="summary-verdict-score">${sc.score ?? 0}/100</span></div>
+    ${topReasons.length ? `<ul class="summary-verdict-reasons">${topReasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+    ${(sc.caveats || []).map((c) => `<div class="summary-caveat">&#9888; ${esc(c)}</div>`).join("")}
+  </div>`;
 
   // === TOP ROW: Auth badges + Score ===
   html += '<div class="summary-top-row">';
@@ -90,32 +100,52 @@ export async function renderSummary(container, analysis, apiKeys) {
   // === BOTTOM ROW: Sender details ===
   html += '<div class="summary-bottom-row">';
 
+  // The sender card must not look safe for a spoofed From. Whether the From
+  // domain is genuine is exactly what DMARC decides.
+  const dmarc = auth?.mechanisms?.dmarc?.status;
+  const spoofed = dmarc === "fail" || dmarcAligned === false;
+  const verifiedSender = dmarc === "pass" && dmarcAligned === true;
+  const lookalike = isSuspiciousDomain(sd);
   html += mkCard(
     "Sender",
     "user",
     [
       { l: "From", v: trunc(from, 40), t: from, m: 1 },
-      { l: "Domain", v: sd, m: 1, c: isSuspiciousDomain(sd) ? "suspicious" : "" },
+      { l: "Domain", v: sd, m: 1, c: lookalike ? "suspicious" : "" },
+      spoofed
+        ? { l: "Authenticity", v: "Not verified — fails DMARC", c: "malicious" }
+        : verifiedSender
+          ? { l: "Authenticity", v: "Verified by DMARC", c: "verified" }
+          : { l: "Authenticity", v: "Could not be verified", c: "suspicious" },
     ],
-    isSuspiciousDomain(sd) ? "high" : "low",
+    spoofed || lookalike ? "high" : verifiedSender ? "low" : "medium",
   );
 
+  // Reply-To is informational in DMARC terms, so a differing domain is a
+  // caution (amber), not a failure (red).
   html += mkCard(
     "Reply-To",
     "edit",
+    replyTo
+      ? [
+          { l: "Address", v: trunc(replyTo, 40), t: replyTo, m: 1, c: dm ? "suspicious" : "" },
+          dm
+            ? { l: "Note", v: "Replies go to a different domain", c: "suspicious" }
+            : { l: "Note", v: "Same domain as From", c: "verified" },
+        ]
+      : [{ l: "Address", v: "None — replies go to From" }],
+    dm ? "medium" : "neutral",
+  );
+
+  html += mkCard(
+    "Message",
+    "file",
     [
-      {
-        l: "Address",
-        v: trunc(replyTo, 40),
-        t: replyTo,
-        m: 1,
-        c: dm ? "suspicious" : "",
-      },
-      ...(dm
-        ? [{ l: "Mismatch", v: "Differs from From domain", c: "malicious" }]
-        : []),
+      { l: "Subject", v: trunc(h.subject || "(no subject)", 60), t: h.subject || "" },
+      { l: "Date", v: h.date ? trunc(h.date, 40) : "N/A", t: h.date || "" },
+      ...(h.xMailer ? [{ l: "Mailer", v: trunc(h.xMailer, 40), t: h.xMailer, m: 1 }] : []),
     ],
-    dm ? "high" : "low",
+    "neutral",
   );
 
   html += '</div>';
@@ -140,7 +170,7 @@ export async function renderSummary(container, analysis, apiKeys) {
 
   // originIp is public by construction now, so the border flags the odd case:
   // a chain that records no public address at all.
-  html += `<div class="summary-ip-card ${chain.length && !originIp ? "risk-border-high" : "risk-border-neutral"}" data-lookup-scope>
+  html += `<div class="summary-card summary-ip-card ${chain.length && !originIp ? "risk-border-high" : "risk-border-neutral"}" data-lookup-scope>
     <div class="card-header">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ICONS.globe}</svg>
       <h3>Sender IP</h3>
@@ -292,7 +322,26 @@ export function renderVerdict(c, sc, langAnalysis) {
         ? "tier-medium"
         : "tier-low";
   const langFlagsHtml = langAnalysis ? renderLangFlags(langAnalysis) : "";
-  c.innerHTML = `<div class="verdict-box ${tc}"><div class="verdict-tier">${esc(sc.tier || "Unknown")}</div><div class="verdict-score">Score: ${sc.score || 0}/100</div><div class="verdict-reasons">${(sc.reasons || []).map((r) => `<span class="reason-tag">${esc(r)}</span>`).join("")}</div></div><div class="score-breakdown">${["auth", "iocs", "language"].map((k) => `<div class="score-item"><span class="score-label">${esc(k.toUpperCase())}</span><div class="score-bar"><div class="score-fill" style="width:${sc.breakdown?.[k] || 0}%"></div></div><span class="score-value">${sc.breakdown?.[k] || 0}</span></div>`).join("")}</div>${langFlagsHtml ? `<div class="lang-flags-section"><h4>Language Flags</h4>${langFlagsHtml}</div>` : ""}`;
+
+  // Each category shows its bar and, directly beneath it, the reasons that
+  // produced it — instead of one centred cloud of every reason at once. A bar
+  // is coloured by how bad its score is; a full green bar read as "all good".
+  const groups = sc.reasonGroups || { auth: sc.reasons || [], iocs: [], language: [] };
+  const labels = { auth: "Authentication", iocs: "Indicators", language: "Language" };
+  const severity = (v) => (v >= 60 ? "high" : v >= 30 ? "medium" : "low");
+  const columns = ["auth", "iocs", "language"]
+    .map((k) => {
+      const v = sc.breakdown?.[k] || 0;
+      const reasons = groups[k] || [];
+      return `<div class="score-item"><div class="score-head"><span class="score-label">${labels[k]}</span><span class="score-value">${v}</span></div><div class="score-bar"><div class="score-fill ${severity(v)}" style="width:${v}%"></div></div><ul class="score-reasons">${reasons.length ? reasons.map((r) => `<li>${esc(r)}</li>`).join("") : '<li class="none">Nothing found</li>'}</ul></div>`;
+    })
+    .join("");
+
+  const caveats = (sc.caveats || [])
+    .map((cv) => `<div class="verdict-caveat">&#9888; ${esc(cv)}</div>`)
+    .join("");
+
+  c.innerHTML = `<div class="verdict-box ${tc}"><div class="verdict-tier">${esc(sc.tier || "Unknown")}</div><div class="verdict-score">Score: ${sc.score || 0}/100</div>${caveats}</div><div class="score-breakdown">${columns}</div>${langFlagsHtml ? `<div class="lang-flags-section"><h4>Language Flags</h4>${langFlagsHtml}</div>` : ""}`;
 }
 
 // Colour per authentication result. "unverified", "neutral", "permerror" and
@@ -477,6 +526,45 @@ export function renderIOCs(container, iocs, apiKeys) {
   container.innerHTML = sections.join("") || "<p>No IOCs found</p>";
 }
 
+/**
+ * Fill a URL's decoder panel the first time it is opened. Decoders that find
+ * something in this URL are highlighted; the rest stay clickable so the
+ * analyst can confirm there is nothing there. Wired to window in main.js.
+ */
+export function renderDecoders(details) {
+  if (!details.open) return;
+  const body = details.querySelector(".decode-body");
+  if (!body || body.dataset.ready) return;
+  body.dataset.ready = "1";
+
+  const found = detectEncodings(details.dataset.url);
+  const buttons = URL_DECODERS.map(
+    (d) =>
+      `<button type="button" class="decode-btn${d.id === "all" || found.includes(d.id) ? " applies" : ""}" onclick="runDecoder(this, '${d.id}')">${esc(d.label)}</button>`,
+  ).join("");
+  body.innerHTML = `<div class="decode-buttons">${buttons}</div><div class="decode-result" hidden></div>`;
+}
+
+/** Run one decoder against the panel's URL and show the result. */
+export function runDecoder(btn, id) {
+  const details = btn.closest(".url-decode");
+  const result = details?.querySelector(".decode-result");
+  const decoder = URL_DECODERS.find((d) => d.id === id);
+  if (!result || !decoder) return;
+
+  details
+    .querySelectorAll(".decode-btn")
+    .forEach((b) => b.classList.toggle("active", b === btn));
+
+  const r = safeRun(decoder.run, details.dataset.url);
+  result.hidden = false;
+  if (!r) {
+    result.innerHTML = `<div class="decode-empty">${esc(decoder.label)}: nothing to decode in this URL.</div>`;
+    return;
+  }
+  result.innerHTML = `${r.note ? `<div class="decode-note">${esc(r.note)}</div>` : ""}<pre class="decode-output mono">${esc(r.output)}</pre><button type="button" class="btn-sm" onclick="copyText(this.previousElementSibling.textContent, this)">Copy</button>`;
+}
+
 /** Re-render one IOC section with every row shown. Wired to window in main.js. */
 export function showAllIOCs(id) {
   const data = iocSectionData.get(id);
@@ -577,7 +665,22 @@ function renderIOCSection(id, title, items, type, apiKeys, showAll) {
         }
       }
 
-      return `<tr class="ioc-row"><td class="ioc-value-cell"><span class="ioc-original mono">${esc(value)}</span><span class="ioc-defanged mono hidden">${esc(defanged)}</span>${hashHtml}</td><td class="ioc-risk-cell">${riskHtml}</td><td class="ioc-actions"><button class="btn-sm" onclick="copyIOC(this)" title="Copy">Copy</button><button class="btn-sm" onclick="toggleDefang(this)" title="Defang">Defang</button><div class="ioc-lookup-btns">${vtBtn}${emailDomainBtn}${abuseBtn}</div></td></tr><tr class="lookup-result-row hidden" data-ioc-value="${esc(value)}"><td colspan="3" class="lookup-result-cell"><div class="lookup-result-content"></div></td></tr>`;
+      // URL decoders sit inside the value cell, not in a row of their own:
+      // lookup results are found as the row directly after the IOC row.
+      let decodeHtml = "";
+      if (type === "url") {
+        const found = detectEncodings(value);
+        const labels = URL_DECODERS.filter((d) => found.includes(d.id)).map(
+          (d) => d.label,
+        );
+        decodeHtml = `<details class="url-decode${found.length ? " has-encoding" : ""}" data-url="${esc(value)}" ontoggle="renderDecoders(this)"><summary>Decode URL${
+          found.length
+            ? `<span class="decode-hint">encoded: ${esc(labels.join(", "))}</span>`
+            : ""
+        }</summary><div class="decode-body"></div></details>`;
+      }
+
+      return `<tr class="ioc-row"><td class="ioc-value-cell"><span class="ioc-original mono">${esc(value)}</span><span class="ioc-defanged mono hidden">${esc(defanged)}</span>${hashHtml}${decodeHtml}</td><td class="ioc-risk-cell">${riskHtml}</td><td class="ioc-actions"><button class="btn-sm" onclick="copyIOC(this)" title="Copy">Copy</button><button class="btn-sm" onclick="toggleDefang(this)" title="Defang">Defang</button><div class="ioc-lookup-btns">${vtBtn}${emailDomainBtn}${abuseBtn}</div></td></tr><tr class="lookup-result-row hidden" data-ioc-value="${esc(value)}"><td colspan="3" class="lookup-result-cell"><div class="lookup-result-content"></div></td></tr>`;
     })
     .join("");
 

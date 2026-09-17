@@ -405,9 +405,70 @@ input[type="file"]::file-selector-button:hover {
 /* ===== SUMMARY GRID ===== */
 .summary-top-row {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+/* Grid children default to min-width:auto, so one wide child widens its whole
+   track past the viewport. */
+.summary-top-row > *,
+.summary-bottom-row > * {
+  min-width: 0;
+}
+
+/* ===== VERDICT STRIP (top of summary) ===== */
+.summary-verdict {
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius-lg);
+  padding: 0.875rem 1.25rem;
+  margin-bottom: 1rem;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 1.5rem;
+  align-items: center;
+}
+.summary-verdict.tier-high { background: var(--red-bg); border-color: var(--red-border); border-left-color: var(--red); }
+.summary-verdict.tier-medium { background: var(--yellow-bg); border-color: var(--yellow-border); border-left-color: var(--yellow); }
+.summary-verdict.tier-low { background: var(--green-bg); border-color: var(--green-border); border-left-color: var(--green); }
+.summary-verdict-main {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.summary-verdict-tier {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.tier-high .summary-verdict-tier { color: var(--red); }
+.tier-medium .summary-verdict-tier { color: var(--yellow); }
+.tier-low .summary-verdict-tier { color: var(--green); }
+.summary-verdict-score {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.summary-verdict-reasons {
+  list-style: none;
+  font-size: 12px;
+  color: var(--text);
+}
+.summary-verdict-reasons li::before {
+  content: "›";
+  color: var(--text-muted);
+  margin-right: 0.5rem;
+}
+.summary-caveat,
+.verdict-caveat {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--yellow);
+  margin-top: 0.375rem;
+}
+.verdict-caveat {
+  max-width: 640px;
+  margin: 0.5rem auto 0;
 }
 .summary-bottom-row {
   display: grid;
@@ -513,19 +574,21 @@ input[type="file"]::file-selector-button:hover {
   color: var(--accent);
   opacity: 0.7;
 }
+/* Counters share the row evenly instead of wrapping onto a second line, which
+   made this card twice the height of the Authentication card beside it. */
 .ioc-count-grid {
   display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 .ioc-count-item {
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0.5rem 0.75rem;
+  padding: 0.5rem 0.25rem;
   background: var(--bg-surface);
   border-radius: var(--radius-md);
-  min-width: 60px;
   border: 1px solid var(--border);
 }
 .ioc-count-item.high {
@@ -611,7 +674,10 @@ input[type="file"]::file-selector-button:hover {
   font-size: 12px;
   color: var(--text);
   text-align: right;
-  word-break: break-all;
+  /* Break long unbroken tokens only when they must; break-all split ordinary
+     words mid-word ("Differs from From d/omain"). */
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 .summary-row .value.mono {
   font-family: "JetBrains Mono", "Roboto Mono", monospace;
@@ -668,31 +734,51 @@ input[type="file"]::file-selector-button:hover {
   margin-bottom: 1rem;
   font-family: "JetBrains Mono", monospace;
 }
-.verdict-reasons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  justify-content: center;
-}
-.reason-tag {
-  background: var(--bg-elevated);
-  padding: 0.3rem 0.75rem;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-}
-
-/* Score breakdown */
+/* Score breakdown: one column per category, bar above its own reasons */
 .score-breakdown {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
+  gap: 1.25rem;
 }
 .score-item {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-width: 0;
+}
+.score-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.score-reasons {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 12px;
+  color: var(--text);
+}
+.score-reasons li {
+  padding-left: 0.875rem;
+  position: relative;
+  overflow-wrap: anywhere;
+}
+.score-reasons li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.score-reasons li.none {
+  color: var(--text-muted);
+}
+.score-reasons li.none::before {
+  display: none;
 }
 .score-label {
   font-size: 10px;
@@ -712,8 +798,12 @@ input[type="file"]::file-selector-button:hover {
   background: var(--accent);
   border-radius: 3px;
   transition: width 0.4s ease;
-  box-shadow: 0 0 8px var(--accent-glow);
 }
+/* Coloured by severity: in this design green means "pass", so a full green
+   risk bar read as reassurance. */
+.score-fill.high { background: var(--red); }
+.score-fill.medium { background: var(--yellow); }
+.score-fill.low { background: var(--green); }
 .score-value {
   font-size: 12px;
   color: var(--text-secondary);
@@ -1675,6 +1765,12 @@ mark.highlight-credential {
   .summary-bottom-row {
     grid-template-columns: 1fr;
   }
+  .summary-verdict {
+    grid-template-columns: 1fr;
+  }
+  .score-breakdown {
+    grid-template-columns: 1fr;
+  }
   .auth-badges-row {
     gap: 0.35rem;
   }
@@ -1682,11 +1778,13 @@ mark.highlight-credential {
     font-size: 10px;
     padding: 0.25rem 0.5rem;
   }
+  /* On a phone five counters cannot share one row; let them wrap. */
   .ioc-count-grid {
     gap: 0.5rem;
+    flex-wrap: wrap;
   }
   .ioc-count-item {
-    min-width: 50px;
+    flex: 1 1 56px;
     padding: 0.4rem 0.5rem;
   }
   .app-header {
@@ -1834,25 +1932,10 @@ mark.highlight-credential {
    The originating IP is the analyst's first pivot, so it gets its own
    full-width card with lookup buttons rather than a truncated line in a
    three-across grid. */
+/* Background, border and header come from .summary-card, so it matches the
+   cards above it instead of sitting on a lighter surface. */
 .summary-ip-card {
-  background: var(--bg-surface, #111);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.875rem 1rem;
-  margin-top: 0.75rem;
-}
-.summary-ip-card .card-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.75rem;
-  color: var(--text-muted);
-}
-.summary-ip-card .card-header h3 {
-  margin: 0;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  margin-top: 1rem;
 }
 .ip-primary,
 .ip-secondary {
@@ -2044,4 +2127,92 @@ mark.highlight-credential {
 }
 .align-why.warn {
   color: #f59e0b;
+}
+
+/* ===== URL DECODERS ===== */
+.url-decode {
+  margin-top: 0.375rem;
+}
+.url-decode > summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: none;
+  list-style-position: inside;
+  width: fit-content;
+}
+.url-decode > summary:hover {
+  color: var(--accent);
+}
+.url-decode.has-encoding > summary {
+  color: #f59e0b;
+}
+.decode-hint {
+  margin-left: 0.5rem;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+.decode-body {
+  margin-top: 0.5rem;
+  padding: 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-deep, #0a0a0a);
+}
+.decode-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.decode-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+.decode-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.decode-btn.applies {
+  border-color: rgba(159, 239, 0, 0.5);
+  color: var(--accent);
+}
+.decode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+}
+.decode-result {
+  margin-top: 0.625rem;
+}
+.decode-note {
+  font-size: 11px;
+  color: #f59e0b;
+  margin-bottom: 0.375rem;
+  overflow-wrap: anywhere;
+}
+.decode-output {
+  margin: 0 0 0.375rem;
+  padding: 0.5rem;
+  background: var(--bg-elevated);
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  color: var(--text);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.decode-empty {
+  font-size: 11px;
+  color: var(--text-muted);
 }

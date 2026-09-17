@@ -17,6 +17,8 @@ import {
   renderHeaders,
   renderSummary,
   showAllIOCs,
+  renderDecoders,
+  runDecoder,
 } from "./render.js";
 
 // State
@@ -244,6 +246,7 @@ async function handleAnalyze() {
   const input = elements.emailInput ? elements.emailInput.value.trim() : "";
 
   if (!input) {
+    hideResults();
     showStatus("Please paste an email or upload a file first.", "error");
     return;
   }
@@ -259,6 +262,22 @@ async function handleAnalyze() {
     // Parse headers
     const headers = parseHeaders(input);
     console.log("[Phishing Analyzer] Headers parsed");
+
+    // Refuse to issue a verdict on something that is not an email. Arbitrary
+    // text used to come back "Low Risk", which reads as a clean bill of health.
+    const EMAIL_HEADERS = [
+      "from", "to", "subject", "date", "received", "message-id", "return-path",
+      "authentication-results", "received-spf", "dkim-signature", "reply-to",
+      "mime-version", "content-type",
+    ];
+    if (!EMAIL_HEADERS.some((h) => h in headers.all)) {
+      hideResults();
+      showStatus(
+        "No email headers found — this doesn't look like an email. Paste the full raw message source (headers and body), or upload the .eml file.",
+        "error",
+      );
+      return;
+    }
 
     // Parse authentication
     const auth = parseAuth(headers);
@@ -304,7 +323,7 @@ async function handleAnalyze() {
     }
 
     // Calculate score
-    const score = calculateScore(auth, iocs, languageAnalysis);
+    const score = calculateScore(auth, iocs, languageAnalysis, headers);
     console.log("[Phishing Analyzer] Score calculated:", score?.tier);
 
     // Store analysis
@@ -326,6 +345,7 @@ async function handleAnalyze() {
     console.log("[Phishing Analyzer] Analysis complete");
   } catch (error) {
     console.error("[Phishing Analyzer] Analysis error:", error);
+    hideResults();
     showStatus("Error analyzing email: " + error.message, "error");
   }
 }
@@ -361,23 +381,27 @@ function detectFullEmail(input) {
 function handleClear() {
   if (elements.emailInput) elements.emailInput.value = "";
   if (elements.fileUpload) elements.fileUpload.value = "";
-  currentAnalysis = null;
+  hideResults();
+  showStatus("");
+}
 
-  // Hide all result panels
-  const panels = [
+/**
+ * Hide every result panel. Called on Clear and whenever an analysis is refused
+ * or fails — otherwise the previous message's verdict stays on screen beneath
+ * the error and reads as the result for the new input.
+ */
+function hideResults() {
+  currentAnalysis = null;
+  for (const id of [
     "summary-section",
     "verdict-section",
     "auth-section",
     "ioc-section",
     "body-section",
     "headers-section",
-  ];
-  panels.forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) el.classList.add("hidden");
-  });
-
-  showStatus("");
+  ]) {
+    document.getElementById(id)?.classList.add("hidden");
+  }
 }
 
 // Handle File Upload
@@ -1089,6 +1113,8 @@ window.toggleDefang = toggleDefang;
 window.promptSettings = promptSettings;
 window.rescanVT = rescanVT;
 window.showAllIOCs = showAllIOCs;
+window.renderDecoders = renderDecoders;
+window.runDecoder = runDecoder;
 window.copyText = copyText;
 
 // Prompt user to open settings (for disabled lookup buttons)

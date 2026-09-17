@@ -33,6 +33,8 @@ jobs:
       - run: node tests/auth.test.mjs
       - run: node tests/attachments.test.mjs
       - run: node tests/ip.test.mjs
+      - run: node tests/url-decode.test.mjs
+      - run: node tests/links.test.mjs
 
   deploy:
     needs: test

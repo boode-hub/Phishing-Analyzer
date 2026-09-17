@@ -10,12 +10,13 @@ A fully client-side web application that analyzes suspicious emails for phishing
 ## Features
 
 - **Header Analysis** — Parses email headers, extracts authentication results (SPF/DKIM/DMARC), and detects domain alignment issues
-- **Body Analysis** — Extracts plain text and HTML content, identifies mismatched links (display text vs actual URL)
-- **IOC Extraction** — Automatically finds URLs, domains, IP addresses, email addresses, and attachments with risk flagging
+- **Body Analysis** — Extracts plain text and HTML content, and flags deceptive links — link text that shows one address while pointing to another
+- **IOC Extraction** — Finds URLs (including tracking pixels and other remote resources), domains, IP addresses, email addresses, and attachments with risk flagging. Links rewritten by Microsoft Safe Links or Proofpoint are unwrapped, and the real destination is analysed as an IOC of its own
+- **URL Decoders** — Under every URL: unwrap Safe Links / Proofpoint v1–v3 / Google / Barracuda / Cisco / open redirects, multi-layer URL decoding, Base64, punycode (reveals lookalike characters), HTML entities, hex and `\u`/`\x` escapes, or everything at once
 - **File Hashing** — Decodes every file part in the message, attachments and inline images alike, and shows SHA-256 and MD5 for each so any of them can be checked against VirusTotal in one click
 - **Sender IP** — States the originating IP (where the message entered the mail system) separately from the last relay, each with VirusTotal and AbuseIPDB lookup buttons
 - **Language Analysis** — Detects urgency, authority/fear, financial fraud, and credential-harvesting language patterns with inline highlighting
-- **Risk Scoring** — Composite score based on authentication failures, IOC risk flags, and language analysis
+- **Risk Scoring** — Composite score based on authentication failures, IOC risk flags, and language analysis, with every point explained. Warns when the evidence is too thin to trust a low score (forwarded messages, missing authentication headers)
 - **VirusTotal Integration** — Optional per-IOC lookup for URLs, domains, IPs, and file hashes (requires your own API key)
 - **AbuseIPDB Integration** — Optional per-IOC IP reputation lookup (requires your own API key)
 - **Defang/Copy** — One-click defanging for safe sharing, and copy-to-clipboard for any IOC
@@ -40,7 +41,8 @@ node server.js
 
 ## Usage
 
-1. **Paste** raw email headers/source into the text area, or **upload** a `.eml` file
+1. **Paste** the raw message source into the text area, or **upload** a `.eml` file. Use the original message, not a forward — a forward's headers describe the forward
+
 2. Click **Analyze Email**
 3. Review the panels:
    - **Quick Summary** — Key signals at a glance
@@ -56,23 +58,28 @@ node server.js
 ```
 /
 ├── index.html              # App shell
+├── favicon.svg             # App icon (+ favicon-32.png, apple-touch-icon.png)
 ├── styles/
 │   └── main.css            # Design system & styling
 ├── scripts/
 │   ├── main.js             # App init, event wiring, API lookups
 │   ├── parse-headers.js    # Header extraction & unfolding
-│   ├── parse-auth.js       # SPF/DKIM/DMARC + domain alignment
-│   ├── parse-body.js       # MIME body extraction, link parsing
+│   ├── parse-auth.js       # SPF/DKIM/DMARC, alignment, received chain, sender IP
+│   ├── parse-body.js       # MIME tree parsing, links, remote resources
 │   ├── extract-iocs.js     # IOC extraction + risk flagging
+│   ├── url-decode.js       # URL unwrapping and decoders
+│   ├── ip-utils.js         # IP validation and extraction
 │   ├── analyze-language.js # Urgency/fraud keyword scoring
 │   ├── score.js            # Composite verdict scoring
 │   ├── render.js           # DOM rendering for all panels
 │   └── hash-utils.js       # SHA-256 & MD5 (byte-accurate) for file hashing
+├── tests/                  # Plain node test suites (see Tests)
 ├── sample-data/            # Test .eml files
 │   ├── legitimate-email.eml
 │   ├── phishing-spoofed.eml
 │   └── phishing-urgency.eml
-├── server.js               # Simple local HTTP server
+├── .github/workflows/      # Runs the tests, then deploys to GitHub Pages
+├── server.js               # Local server + API relay
 └── README.md
 ```
 
@@ -140,7 +147,11 @@ Three synthetic `.eml` files are included for testing:
 | ---------------------- | ---------------------------------------------- | --------------- |
 | `legitimate-email.eml` | Clean email with passing auth                  | Low Risk        |
 | `phishing-spoofed.eml` | Spoofed domain, auth failures, domain mismatch | High Risk       |
-| `phishing-urgency.eml` | Urgency/financial language patterns            | Low-Medium Risk |
+| `phishing-urgency.eml` | Urgency/financial language, passing auth       | Low Risk †      |
+
+† The message authenticates correctly, and language alone is deliberately not
+enough to raise the tier — urgent wording is common in legitimate mail. The
+language findings are still listed in the verdict.
 
 
 ## Tests
@@ -150,6 +161,8 @@ node tests/runner.mjs            # module unit tests
 node tests/auth.test.mjs         # SPF/DKIM/DMARC parsing + alignment + scoring
 node tests/attachments.test.mjs  # MIME extraction + file hashing
 node tests/ip.test.mjs           # IP validation, extraction, private ranges
+node tests/url-decode.test.mjs   # URL unwrapping and decoders
+node tests/links.test.mjs        # link/IOC extraction, summary and verdict rendering
 ```
 
 Attachment hashes are asserted against `node:crypto`, not against values this
