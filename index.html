@@ -98,9 +98,10 @@
           </div>
           <div class="input-method">
             <label for="file-upload">Or upload file</label>
-            <input type="file" id="file-upload" accept=".eml,.txt,.msg" />
+            <input type="file" id="file-upload" accept=".eml,.txt,.msg" multiple />
             <small class="file-hint"
-              >.eml and .txt supported. .msg coming soon.</small
+              >.eml and .txt supported. Pick several files to score a whole
+              batch at once. .msg coming soon.</small
             >
           </div>
         </div>
@@ -130,13 +131,22 @@
             <legend class="visually-hidden">Formats</legend>
             <label class="export-chip"><input type="checkbox" id="export-html" checked /><span>HTML report</span><small>.html</small></label>
             <label class="export-chip"><input type="checkbox" id="export-csv" checked /><span>CSV</span><small>.csv</small></label>
+            <label class="export-chip"><input type="checkbox" id="export-json" /><span>JSON</span><small>.json</small></label>
           </fieldset>
           <label class="export-raw" title="Adds an indicator_raw column with the original, live values — for importing into tooling"><input type="checkbox" id="export-raw" /> Raw values column in CSV</label>
           <div class="export-actions">
+            <button class="btn btn-secondary" type="button" data-act="copy-iocs" data-raw="0">Copy IOCs</button>
+            <button class="btn btn-secondary" type="button" data-act="copy-iocs" data-raw="1" title="Live values, for tooling">Copy raw</button>
             <button id="export-download" class="btn btn-primary" type="button">Download</button>
           </div>
         </div>
         <div id="export-status" class="export-status" role="status" aria-live="polite"></div>
+      </section>
+
+      <!-- Batch results: shown when several files are analyzed at once -->
+      <section id="batch-section" class="panel hidden">
+        <h2>Batch results</h2>
+        <div id="batch-content"></div>
       </section>
 
       <!-- Quick Summary -->

@@ -46,8 +46,12 @@ export function calculateScore(auth, iocs, languageAnalysis, headers, identity) 
   // no attachment, and only its wording gives it away. Weighted normally that
   // lands at "Low Risk", which is exactly the message an accounts team must not
   // wave through, so a payment-fraud phrase forces at least "Suspicious".
+  // Two or more signals, not one: a single "approve the payment" appears in
+  // ordinary finance mail, while real payment fraud stacks the instruction, the
+  // bank details, the excuse for not talking and the demand for secrecy.
   const becMatches = languageAnalysis?.categories?.bec?.matchCount || 0;
-  if (becMatches && total < TIER_SUSPICIOUS) total = TIER_SUSPICIOUS;
+  const becSuspected = becMatches >= 2;
+  if (becSuspected && total < TIER_SUSPICIOUS) total = TIER_SUSPICIOUS;
 
   const reasons = [
     ...authResult.reasons,
@@ -72,7 +76,7 @@ export function calculateScore(auth, iocs, languageAnalysis, headers, identity) 
     },
     caveats: [
       ...evidenceCaveats(auth, headers),
-      ...(becMatches
+      ...(becSuspected
         ? [
             "This message asks about payments or bank details. Confirm any change by phone on a number you already had — never one from this email — before anything is paid.",
           ]

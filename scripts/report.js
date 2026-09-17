@@ -225,13 +225,16 @@ const LOGO = `<svg class="logo" viewBox="-5 -5 110 110" aria-hidden="true"><defs
  * @param {Map<string,string>} [options.lookups] - "vt:<value>" / "abuse:<value>" summaries
  * @param {Date} [options.now]
  */
-export function buildHtmlReport(analysis, { lookups = new Map(), now = new Date() } = {}) {
+export function buildHtmlReport(analysis, { lookups = new Map(), local = new Map(), now = new Date() } = {}) {
   const hd = analysis.headers || {};
   const auth = analysis.auth || {};
   const iocs = analysis.iocs || {};
   const score = analysis.score || {};
   const vt = (v) => lookups.get(`vt:${v}`) || "";
   const abuse = (v) => lookups.get(`abuse:${v}`) || "";
+  // Registration and DNS answers the analyst already pulled up, if any.
+  const whois = (v) => local.get(`whois:${v}`) || "";
+  const dnsOf = (v) => local.get(`dns:${v}`) || "";
 
   const urls = iocs.urls || [];
   const domains = iocs.domains || [];
@@ -294,6 +297,22 @@ export function buildHtmlReport(analysis, { lookups = new Map(), now = new Date(
   ];
   if (hd.xMailer) messageRows.push(["Mailer", esc(defangText(hd.xMailer))]);
   const message = panel("message", "Message", kv(messageRows));
+
+  // --- Sender identity ---------------------------------------------------------
+  const identityFindings = analysis.identity?.findings || [];
+  const identityPanel = identityFindings.length
+    ? panel(
+        "identity",
+        "Sender identity",
+        `<p class="dim small lead">Who the message claims to be from. Authentication cannot answer this: a display name and a lookalike domain both pass every check.</p>${identityFindings
+          .map(
+            (f) =>
+              `<div class="callout ${f.severity === "high" ? "bad" : "warn"}"><strong>${esc(defangText(f.title))}</strong><div>${esc(defangText(f.detail))}</div></div>`,
+          )
+          .join("")}`,
+        identityFindings.length,
+      )
+    : "";
 
   // --- Verdict ------------------------------------------------------------------
   const groups = score.reasonGroups || { auth: score.reasons || [], iocs: [], language: [] };
@@ -376,6 +395,26 @@ export function buildHtmlReport(analysis, { lookups = new Map(), now = new Date(
     }
   }
 
+  const arc = auth.arc;
+  if (arc?.present) {
+    authBody += `<h3>ARC chain</h3><div class="callout ${arc.chainValid === false ? "bad" : "muted"}">${arc.sets} ARC set${
+      arc.sets === 1 ? "" : "s"
+    } present${arc.chainValid === false ? ", marked broken (cv=fail)" : ""}.${
+      arc.oldest
+        ? ` The first hop recorded SPF ${esc(arc.oldest.spf.toUpperCase())}, DKIM ${esc(
+            arc.oldest.dkim.toUpperCase(),
+          )}, DMARC ${esc(arc.oldest.dmarc.toUpperCase())} for the original sender. ARC is informational and is not verified here.`
+        : ""
+    }</div>`;
+  }
+
+  const anomalies = auth.anomalies || [];
+  if (anomalies.length) {
+    authBody += `<h3>Header anomalies</h3>${anomalies
+      .map((a) => `<div class="callout ${a.severity === "high" ? "bad" : a.severity === "medium" ? "warn" : "muted"}">${esc(defangText(a.message))}</div>`)
+      .join("")}`;
+  }
+
   const warnings = auth.trust?.warnings || [];
   if (warnings.length) {
     authBody += `<h3>Header trust</h3>${warnings.map((w) => `<div class="callout warn">${esc(defangText(w))}</div>`).join("")}`;
@@ -405,6 +444,7 @@ export function buildHtmlReport(analysis, { lookups = new Map(), now = new Date(
             ${host ? `<div class="path-host">${code(defangDomain(host))}</div>` : ""}
             ${vt(ip) ? `<div class="lookup">VirusTotal: ${esc(vt(ip))}</div>` : ""}
             ${abuse(ip) ? `<div class="lookup">AbuseIPDB: ${esc(abuse(ip))}</div>` : ""}
+            ${whois(ip) ? `<div class="lookup">Registration: ${esc(defangText(whois(ip)))}</div>` : ""}
           </div>`,
         )
         .join("")}</div>`
@@ -494,8 +534,24 @@ export function buildHtmlReport(analysis, { lookups = new Map(), now = new Date(
     "Indicators of compromise",
     [
       sub("URLs", urls.length, urlBody),
-      sub("Domains", domains.length, iocTable(domains, "Domain", defangDomain, [["VirusTotal", vt]])),
-      sub("IP addresses", ips.length, iocTable(ips, "IP", defangIp, [["VirusTotal", vt], ["AbuseIPDB", abuse]])),
+      sub(
+        "Domains",
+        domains.length,
+        iocTable(domains, "Domain", defangDomain, [
+          ["VirusTotal", vt],
+          ["Registration", whois],
+          ["DNS", dnsOf],
+        ]),
+      ),
+      sub(
+        "IP addresses",
+        ips.length,
+        iocTable(ips, "IP", defangIp, [
+          ["VirusTotal", vt],
+          ["AbuseIPDB", abuse],
+          ["Registration", whois],
+        ]),
+      ),
       sub("Email addresses", emails.length, iocTable(emails, "Email", defangEmail)),
       sub("Attachments", files.length, fileBody),
       sub("Deceptive links", deceptive.length, deceptiveBody),
@@ -523,10 +579,11 @@ export function buildHtmlReport(analysis, { lookups = new Map(), now = new Date(
   </header>
   ${hero}
   <nav class="toc" aria-label="Contents">
-    <a href="#message">Message</a><a href="#verdict">Verdict</a><a href="#authentication">Authentication</a><a href="#sender-path">Sender path</a><a href="#indicators">Indicators</a>
+    <a href="#message">Message</a>${identityPanel ? '<a href="#identity">Identity</a>' : ""}<a href="#verdict">Verdict</a><a href="#authentication">Authentication</a><a href="#sender-path">Sender path</a><a href="#indicators">Indicators</a>
   </nav>
   <div class="defang-note"><strong>Indicators are defanged</strong> — <code>hxxp[://]</code>, <code>[.]</code>, <code>[@]</code>, <code>[:]</code>. Re-fang before using them in tooling. Hashes are unmodified.</div>
   ${message}
+  ${identityPanel}
   ${verdict}
   ${authentication}
   ${senderPath}
@@ -720,6 +777,7 @@ export const CSV_COLUMNS = [
   "details",
   "virustotal",
   "abuseipdb",
+  "registration",
 ];
 
 /**
@@ -727,15 +785,26 @@ export const CSV_COLUMNS = [
  * reports. RFC 4180 quoting, CRLF line endings, and a UTF-8 byte-order mark so
  * Excel reads non-ASCII (punycode reveals, subjects) correctly.
  */
-export function buildCsvReport(analysis, { lookups = new Map(), includeRaw = false } = {}) {
+export function buildCsvReport(analysis, { lookups = new Map(), local = new Map(), includeRaw = false } = {}) {
   const iocs = analysis.iocs || {};
   const vt = (v) => lookups.get(`vt:${v}`) || "";
   const abuse = (v) => lookups.get(`abuse:${v}`) || "";
+  // Registration and DNS answers the analyst already pulled up, if any.
+  const whois = (v) => local.get(`whois:${v}`) || "";
+  const dnsOf = (v) => local.get(`dns:${v}`) || "";
   const flags = (it) => flagsOf(it).join("; ");
   const rows = [];
-
   const add = (type, raw, defanged, source, riskFlags, details, lookupKey = raw) => {
-    const row = [type, defanged, source || "", riskFlags || "", details || "", vt(lookupKey), abuse(lookupKey)];
+    const row = [
+      type,
+      defanged,
+      source || "",
+      riskFlags || "",
+      details || "",
+      vt(lookupKey),
+      abuse(lookupKey),
+      whois(lookupKey),
+    ];
     if (includeRaw) row.push(raw);
     rows.push(row);
   };
@@ -768,6 +837,128 @@ export function buildCsvReport(analysis, { lookups = new Map(), includeRaw = fal
 
   const header = includeRaw ? [...CSV_COLUMNS, "indicator_raw"] : CSV_COLUMNS;
   return "﻿" + [header, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
+
+/**
+ * The same analysis as structured data, for a SIEM, MISP, a ticket system or a
+ * script. Indicators are given both live and defanged: a pipeline needs the
+ * real value, a human reading the file does not.
+ */
+export function buildJsonReport(analysis, { lookups = new Map(), local = new Map(), now = new Date() } = {}) {
+  const hd = analysis.headers || {};
+  const auth = analysis.auth || {};
+  const iocs = analysis.iocs || {};
+  const score = analysis.score || {};
+  const enrich = (value) => {
+    const out = {};
+    const vt = lookups.get(`vt:${value}`);
+    const abuse = lookups.get(`abuse:${value}`);
+    const whois = local.get(`whois:${value}`);
+    const dns = local.get(`dns:${value}`);
+    if (vt) out.virustotal = vt;
+    if (abuse) out.abuseipdb = abuse;
+    if (whois) out.registration = whois;
+    if (dns) out.dns = dns;
+    return Object.keys(out).length ? out : undefined;
+  };
+  const item = (value, defanged, extra = {}) => ({
+    indicator: value,
+    defanged,
+    ...extra,
+    lookups: enrich(value),
+  });
+
+  return JSON.stringify(
+    {
+      tool: "Phishing Email Analyzer",
+      generated: now.toISOString(),
+      verdict: {
+        tier: score.tier || "Unknown",
+        score: score.score ?? null,
+        breakdown: score.breakdown || {},
+        reasons: score.reasons || [],
+        caveats: score.caveats || [],
+      },
+      message: {
+        subject: hd.subject || null,
+        from: hd.from?.email || null,
+        fromName: hd.from?.name || null,
+        replyTo: hd.replyTo?.email || null,
+        returnPath: hd.returnPath?.email || null,
+        to: hd.to?.email || null,
+        date: hd.date || null,
+        messageId: hd.messageId || null,
+      },
+      authentication: {
+        spf: auth.mechanisms?.spf || null,
+        dkim: auth.mechanisms?.dkim || null,
+        dmarc: auth.mechanisms?.dmarc || null,
+        alignment: auth.domainAlignment
+          ? {
+              fromDomain: auth.domainAlignment.fromDomain,
+              dmarcAligned: auth.domainAlignment.dmarcAligned,
+              entries: auth.domainAlignment.entries,
+              mismatches: auth.domainAlignment.mismatches,
+            }
+          : null,
+        trustWarnings: auth.trust?.warnings || [],
+        anomalies: auth.anomalies || [],
+        arc: auth.arc || null,
+        senderIp: auth.senderIp || null,
+        receivedChain: (auth.receivedChain || []).map((h) => ({
+          hop: h.number,
+          from: h.from,
+          by: h.by,
+          ip: h.ip,
+          date: h.date,
+          warnings: h.warnings,
+        })),
+      },
+      identity: analysis.identity?.findings || [],
+      language: analysis.languageAnalysis
+        ? Object.fromEntries(
+            Object.entries(analysis.languageAnalysis.categories || {})
+              .filter(([, c]) => c.matchCount)
+              .map(([k, c]) => [k, { label: c.label, count: c.matchCount, phrases: (c.matches || []).map((m) => m.phrase) }]),
+          )
+        : {},
+      indicators: {
+        urls: (iocs.urls || []).map((u) =>
+          item(u.value, defangUrl(u.value), {
+            source: u.source || null,
+            flags: flagsOf(u),
+            unwrappedFrom: u.unwrappedFrom || undefined,
+          }),
+        ),
+        domains: (iocs.domains || []).map((d) =>
+          item(d.value, defangDomain(d.value), { source: d.source || null, flags: flagsOf(d) }),
+        ),
+        ips: (iocs.ips || []).map((i) =>
+          item(i.value, defangIp(i.value), { source: i.source || null, flags: flagsOf(i), private: !!i.private }),
+        ),
+        emails: (iocs.emails || []).map((e) =>
+          item(e.value, defangEmail(e.value), { source: e.source || null, flags: flagsOf(e) }),
+        ),
+        files: (iocs.attachments || []).map((f) => ({
+          filename: f.value || null,
+          contentType: f.contentType || null,
+          size: f.size ?? null,
+          inline: !!f.inline,
+          sha256: f.sha256 || null,
+          md5: f.md5 || null,
+          flags: flagsOf(f),
+          lookups: enrich(f.value),
+        })),
+        deceptiveLinks: (iocs.mismatchedLinks || []).map((l) => ({
+          displays: l.text || null,
+          destination: l.href || null,
+          defanged: defangUrl(l.href || ""),
+        })),
+      },
+    },
+    null,
+    2,
+  );
 }
 
 function csvCell(value) {

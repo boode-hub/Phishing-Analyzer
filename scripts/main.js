@@ -11,7 +11,16 @@ import { analyzeIdentity } from "./analyze-identity.js";
 import { calculateScore } from "./score.js";
 import { sha256, sha256Bytes, md5Bytes } from "./hash-utils.js";
 import { isValidIP, isRoutableIP } from "./ip-utils.js";
-import { buildHtmlReport, buildCsvReport, reportFilename } from "./report.js";
+import {
+  buildHtmlReport,
+  buildCsvReport,
+  buildJsonReport,
+  reportFilename,
+  defangUrl,
+  defangDomain,
+  defangIp,
+  defangEmail,
+} from "./report.js";
 import {
   renderVerdict,
   renderAuth,
@@ -138,6 +147,7 @@ function queryElements() {
     exportSection: "export-section",
     exportHtml: "export-html",
     exportCsv: "export-csv",
+    exportJson: "export-json",
     exportRaw: "export-raw",
     exportDownload: "export-download",
     exportStatus: "export-status",
@@ -269,6 +279,69 @@ function renderApiAvailability() {
     "and runs fine right here.";
 }
 
+// Headers every real message carries at least one of. Without any of them the
+// input is not an email, and a verdict on it would be meaningless.
+const EMAIL_HEADERS = [
+  "from", "to", "subject", "date", "received", "message-id", "return-path",
+  "authentication-results", "received-spf", "dkim-signature", "reply-to",
+  "mime-version", "content-type",
+];
+
+/**
+ * Run the whole pipeline over one raw message. Kept separate from the click
+ * handler so a batch of files can be analyzed without touching the DOM.
+ *
+ * @param {string} input - raw email source
+ * @returns {Promise<{analysis?: Object, error?: string}>}
+ */
+async function buildAnalysis(input) {
+  const isFullEmail = detectFullEmail(input);
+  const headers = parseHeaders(input);
+
+  if (!EMAIL_HEADERS.some((h) => h in headers.all)) {
+    return {
+      error:
+        "No email headers found — this doesn't look like an email. Paste the full raw message source (headers and body), or upload the .eml file.",
+    };
+  }
+
+  const auth = parseAuth(headers);
+  const body = isFullEmail ? parseBody(input) : null;
+  const iocs = extractIOCs(headers, body);
+
+  // Hash every extracted file — attachments and inline images alike — so the
+  // hashes are on screen without a lookup, and a VirusTotal file check is one
+  // click away.
+  const files = new Map();
+  for (const att of iocs.attachments || []) {
+    if (att.bytes && att.bytes.length) {
+      att.sha256 = await sha256Bytes(att.bytes);
+      att.md5 = md5Bytes(att.bytes);
+      files.set(att.value, att.bytes);
+    }
+  }
+
+  const languageAnalysis = body && body.text ? analyzeLanguage(body.text) : null;
+  // Who the message claims to be from, which authentication cannot answer.
+  const identity = analyzeIdentity(headers);
+  const score = calculateScore(auth, iocs, languageAnalysis, headers, identity);
+
+  return {
+    analysis: {
+      headers,
+      auth,
+      identity,
+      body,
+      iocs,
+      languageAnalysis,
+      score,
+      rawInput: input,
+      isFullEmail,
+      files,
+    },
+  };
+}
+
 // Handle Analyze Button
 async function handleAnalyze() {
   const input = elements.emailInput ? elements.emailInput.value.trim() : "";
@@ -281,105 +354,93 @@ async function handleAnalyze() {
 
   try {
     showStatus("Analyzing email...", "info");
-    console.log("[Phishing Analyzer] Starting analysis...");
-
-    // Detect if it's headers-only or full email
-    const isFullEmail = detectFullEmail(input);
-    console.log("[Phishing Analyzer] isFullEmail:", isFullEmail);
-
-    // Parse headers
-    const headers = parseHeaders(input);
-    console.log("[Phishing Analyzer] Headers parsed");
-
-    // Refuse to issue a verdict on something that is not an email. Arbitrary
-    // text used to come back "Low Risk", which reads as a clean bill of health.
-    const EMAIL_HEADERS = [
-      "from", "to", "subject", "date", "received", "message-id", "return-path",
-      "authentication-results", "received-spf", "dkim-signature", "reply-to",
-      "mime-version", "content-type",
-    ];
-    if (!EMAIL_HEADERS.some((h) => h in headers.all)) {
+    const { analysis, error } = await buildAnalysis(input);
+    if (error) {
       hideResults();
-      showStatus(
-        "No email headers found — this doesn't look like an email. Paste the full raw message source (headers and body), or upload the .eml file.",
-        "error",
-      );
+      showStatus(error, "error");
       return;
     }
 
-    // Parse authentication
-    const auth = parseAuth(headers);
-    console.log("[Phishing Analyzer] Auth parsed:", auth?.overall);
-
-    // Parse body (if full email)
-    let body = null;
-    if (isFullEmail) {
-      body = parseBody(input);
-      console.log("[Phishing Analyzer] Body parsed");
-    }
-
-    // Extract IOCs
-    const iocs = extractIOCs(headers, body);
-    console.log("[Phishing Analyzer] IOCs extracted:", {
-      urls: iocs?.urls?.length,
-      domains: iocs?.domains?.length,
-      ips: iocs?.ips?.length,
-    });
-
-    // Hash every extracted file — attachments and inline images alike — so the
-    // hashes are on screen without a lookup, and a VirusTotal file check is one
-    // click away. Previously no attachment ever carried its content this far,
-    // so the file-hash lookup always reported "content not available".
+    currentAnalysis = analysis;
     attachmentContentMap.clear();
-    for (const att of iocs.attachments || []) {
-      if (att.bytes && att.bytes.length) {
-        att.sha256 = await sha256Bytes(att.bytes);
-        att.md5 = md5Bytes(att.bytes);
-        attachmentContentMap.set(att.value, att.bytes);
-      }
-    }
-    console.log(
-      "[Phishing Analyzer] Files hashed:",
-      (iocs.attachments || []).length,
-    );
+    for (const [name, bytes] of analysis.files) attachmentContentMap.set(name, bytes);
 
-    // Analyze language (if body available)
-    let languageAnalysis = null;
-    if (body && body.text) {
-      languageAnalysis = analyzeLanguage(body.text);
-      console.log("[Phishing Analyzer] Language analyzed");
-    }
-
-    // Who the message claims to be from, which authentication cannot answer.
-    const identity = analyzeIdentity(headers);
-
-    // Calculate score
-    const score = calculateScore(auth, iocs, languageAnalysis, headers, identity);
-    console.log("[Phishing Analyzer] Score calculated:", score?.tier);
-
-    // Store analysis
-    currentAnalysis = {
-      headers,
-      auth,
-      identity,
-      body,
-      iocs,
-      languageAnalysis,
-      score,
-      rawInput: input,
-      isFullEmail,
-    };
-
-    // Render results
     await renderResults(currentAnalysis);
-
     showStatus("Analysis complete!", "success");
-    console.log("[Phishing Analyzer] Analysis complete");
   } catch (error) {
     console.error("[Phishing Analyzer] Analysis error:", error);
     hideResults();
     showStatus("Error analyzing email: " + error.message, "error");
   }
+}
+
+// ===== BATCH =====
+//
+// Phishing arrives in waves, and opening twenty files one at a time is how a
+// real message gets missed. Every file is scored here; clicking a row loads
+// that message into the full view.
+const batchItems = [];
+
+async function analyzeBatch(files) {
+  const section = document.getElementById("batch-section");
+  const body = document.getElementById("batch-content");
+  if (!section || !body) return;
+
+  batchItems.length = 0;
+  section.classList.remove("hidden");
+  body.innerHTML = `<p class="batch-progress">Analyzing ${files.length} files…</p>`;
+
+  for (const file of files) {
+    const text = await file.text();
+    let row = { name: file.name, text };
+    try {
+      const { analysis, error } = await buildAnalysis(text);
+      if (error) row.error = error;
+      else
+        row = {
+          ...row,
+          tier: analysis.score.tier,
+          score: analysis.score.score,
+          from: analysis.headers.from?.email || "—",
+          subject: analysis.headers.subject || "(no subject)",
+          top: (analysis.score.reasons || [])[0] || "",
+        };
+    } catch (e) {
+      row.error = e.message;
+    }
+    batchItems.push(row);
+  }
+
+  // Worst first: that is the one the analyst should open.
+  const order = { "High Risk": 0, Suspicious: 1, "Low Risk": 2 };
+  const sorted = batchItems
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => (order[a.item.tier] ?? 3) - (order[b.item.tier] ?? 3) || (b.item.score || 0) - (a.item.score || 0));
+
+  body.innerHTML = `<div class="table-scroll"><table class="batch-table">
+      <thead><tr><th>File</th><th>Verdict</th><th>From</th><th>Subject</th><th></th></tr></thead>
+      <tbody>${sorted
+        .map(({ item, index }) =>
+          item.error
+            ? `<tr><td data-label="File">${esc(item.name)}</td><td data-label="Verdict" colspan="3" class="batch-error">${esc(item.error)}</td><td></td></tr>`
+            : `<tr>
+                <td data-label="File" class="mono">${esc(item.name)}</td>
+                <td data-label="Verdict"><span class="batch-tier ${item.tier === "High Risk" ? "high" : item.tier === "Suspicious" ? "medium" : "low"}">${esc(item.tier)} ${item.score}</span></td>
+                <td data-label="From" class="mono">${esc(item.from)}</td>
+                <td data-label="Subject">${esc(item.subject)}</td>
+                <td><button class="btn-sm" data-act="open-batch" data-index="${index}">Open</button></td>
+              </tr>`,
+        )
+        .join("")}</tbody></table></div>
+    <p class="batch-note">${batchItems.length} messages analyzed locally. Open one to see its full report.</p>`;
+}
+
+function openBatchItem(index) {
+  const item = batchItems[Number(index)];
+  if (!item || !elements.emailInput) return;
+  elements.emailInput.value = item.text;
+  handleAnalyze();
+  document.getElementById("summary-section")?.scrollIntoView({ behavior: "smooth" });
 }
 
 // Detect if input is full email or headers-only
@@ -413,6 +474,7 @@ function detectFullEmail(input) {
 function handleClear() {
   if (elements.emailInput) elements.emailInput.value = "";
   if (elements.fileUpload) elements.fileUpload.value = "";
+  document.getElementById("batch-section")?.classList.add("hidden");
   hideResults();
   showStatus("");
 }
@@ -443,7 +505,8 @@ function hideResults() {
 function syncExportControls() {
   const report = elements.exportHtml?.checked;
   const csv = elements.exportCsv?.checked;
-  if (elements.exportDownload) elements.exportDownload.disabled = !report && !csv;
+  const json = elements.exportJson?.checked;
+  if (elements.exportDownload) elements.exportDownload.disabled = !report && !csv && !json;
   if (elements.exportRaw) {
     elements.exportRaw.disabled = !csv;
     elements.exportRaw.closest("label")?.classList.toggle("disabled", !csv);
@@ -459,6 +522,28 @@ function exportStatus(message, type = "ok") {
   exportStatus.timer = setTimeout(() => (el.textContent = ""), 4000);
 }
 
+/**
+ * Every indicator as one block of text, for a blocklist or a ticket. Defanged
+ * by default; the raw list is one click away for tooling that needs live values.
+ */
+function copyAllIOCs(btn) {
+  if (!currentAnalysis) return;
+  const raw = btn.dataset.raw === "1";
+  const iocs = currentAnalysis.iocs || {};
+  const lines = [];
+  const push = (label, values, defang) => {
+    const list = (values || []).map((v) => (raw ? v.value : defang(v.value)));
+    if (list.length) lines.push(`# ${label}`, ...list, "");
+  };
+  push("URLs", iocs.urls, defangUrl);
+  push("Domains", iocs.domains, defangDomain);
+  push("IPs", iocs.ips, defangIp);
+  push("Emails", iocs.emails, defangEmail);
+  const hashes = (iocs.attachments || []).flatMap((a) => [a.sha256, a.md5].filter(Boolean));
+  if (hashes.length) lines.push("# File hashes", ...hashes, "");
+  copyText(lines.join("\n").trim(), btn);
+}
+
 function handleExportDownload() {
   if (!currentAnalysis) return;
   const now = new Date();
@@ -469,6 +554,13 @@ function handleExportDownload() {
       name: reportFilename(currentAnalysis, "html", now),
       type: "text/html;charset=utf-8",
       content: buildHtmlReport(currentAnalysis, { lookups: lookupResults, now }),
+    });
+  }
+  if (elements.exportJson?.checked) {
+    files.push({
+      name: reportFilename(currentAnalysis, "json", now),
+      type: "application/json;charset=utf-8",
+      content: buildJsonReport(currentAnalysis, { lookups: lookupResults, local: localResults, now }),
     });
   }
   if (elements.exportCsv?.checked) {
@@ -487,8 +579,8 @@ function handleExportDownload() {
   // gap lets both through.
   files.forEach((f, i) => setTimeout(() => downloadFile(f), i * 350));
   exportStatus(
-    files.length === 2
-      ? "Downloaded the HTML report and CSV."
+    files.length > 1
+      ? `Downloaded ${files.length} files.`
       : `Downloaded ${files[0].name}`,
   );
 }
@@ -506,8 +598,24 @@ function downloadFile({ name, type, content }) {
 
 // Handle File Upload
 function handleFileUpload(e) {
-  const file = e.target.files[0];
-  if (!file) return;
+  const chosen = [...e.target.files];
+  if (!chosen.length) return;
+
+  // Several files at once: score them all and show the list.
+  if (chosen.length > 1) {
+    const usable = chosen.filter((f) => !f.name.toLowerCase().endsWith(".msg"));
+    if (usable.length < chosen.length) {
+      showStatus(
+        `${chosen.length - usable.length} .msg file(s) skipped — convert them to .eml first.`,
+        "info",
+      );
+    }
+    if (usable.length) analyzeBatch(usable);
+    return;
+  }
+
+  const file = chosen[0];
+  document.getElementById("batch-section")?.classList.add("hidden");
 
   if (file.name.toLowerCase().endsWith(".msg")) {
     showStatus(
@@ -1440,6 +1548,8 @@ const ACTIONS = {
   decode: (btn) => runDecoder(btn, btn.dataset.decoder),
   settings: () => promptSettings(),
   dns: (btn) => fetchDns(btn),
+  "copy-iocs": (btn) => copyAllIOCs(btn),
+  "open-batch": (btn) => openBatchItem(btn.dataset.index),
   // A vendor page is opened in a new tab with no opener reference.
   vendor: (btn) => window.open(btn.dataset.href, "_blank", "noopener,noreferrer"),
 };

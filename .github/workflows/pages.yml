@@ -40,6 +40,8 @@ jobs:
       - run: node tests/language.test.mjs
       - run: node tests/theme.test.mjs
       - run: node tests/imports.test.mjs
+      - run: node tests/security.test.mjs
+      - run: node tests/detection.test.mjs
 
   deploy:
     needs: test

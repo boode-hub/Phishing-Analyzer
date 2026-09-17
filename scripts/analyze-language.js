@@ -211,6 +211,23 @@ const KEYWORD_PATTERNS = {
       "send me the codes",
       "send the codes",
     ],
+    // Fixed phrases only catch mail written the way the list expects. Real
+    // payment fraud writes "I'm currently in a meeting with our lawyers" and
+    // "process a wire transfer immediately", so the same ideas are matched as
+    // patterns too: the instruction, the bank-detail block, the excuse for not
+    // talking, and the demand for secrecy.
+    patterns: [
+      /\b(?:process|approve|release|initiate|arrange|complete|action)\s+(?:a|the|this)?\s*(?:urgent\s+|same[-\s]day\s+)?(?:bank\s+|wire\s+)?(?:transfer|payment|remittance|invoice)\b/gi,
+      /\bwire\s+(?:the\s+)?(?:funds|money|amount|total|\$[\d,.]+)\b/gi,
+      /\btransfer\s+(?:the\s+)?(?:funds|money|amount|\$[\d,.]+)\b/gi,
+      /\b(?:i\s*am|i'm)\s+(?:currently\s+)?(?:in|on)\s+(?:a\s+)?(?:meeting|call|conference)\b/gi,
+      /\b(?:cannot|can't|can\s+not|won't|will\s+not|unable\s+to)\s+(?:be\s+reached|be\s+contacted|talk|speak|discuss|call)\b/gi,
+      /\b(?:i\s+will\s+be|i'll\s+be|i\s+am)\s+unreachable\b/gi,
+      /\b(?:account|routing|swift|iban|sort\s*code|bic)\s*(?:number|code|no\.?)?\s*[:#](?=\s*[A-Z0-9])/gi,
+      /\bdo\s+not\s+(?:delay|discuss|tell|mention|share|inform)\b/gi,
+      /\bjust\s+handle\s+it\b/gi,
+      /\bsend\s+me\s+the\s+(?:confirmation|receipt|proof)\b/gi,
+    ],
     weight: 1.4,
     label: "BEC / Payment Fraud",
   },
@@ -385,6 +402,19 @@ export function analyzeLanguage(text) {
           length: match[0].length,
           category: categoryKey,
         });
+      }
+    }
+
+    // Patterns cover the same ideas written in a way no fixed phrase list
+    // would catch.
+    for (const pattern of config.patterns || []) {
+      const regex = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g");
+      let hit;
+      while ((hit = regex.exec(text)) !== null) {
+        const found = { phrase: hit[0].trim(), index: hit.index, length: hit[0].trim().length };
+        matches.push(found);
+        allMatches.push({ ...found, category: categoryKey });
+        if (hit.index === regex.lastIndex) regex.lastIndex++;
       }
     }
 
