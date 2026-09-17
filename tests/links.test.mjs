@@ -220,6 +220,35 @@ await (async () => {
     failures.push({ name: "renderSummary shows verdict, spoof status, real Reply-To and subject", message: e.message });
   }
 
+  // Language card in the summary.
+  const { analyzeLanguage } = await import("../scripts/analyze-language.js");
+  try {
+    const text = "Your account will be suspended. Act now! act now. Click here to verify <script>. Wire transfer today.";
+    const withLang = { ...a, body: { text }, languageAnalysis: analyzeLanguage(text) };
+    const lc = { innerHTML: "" };
+    await renderSummary(lc, withLang, {});
+    const card = lc.innerHTML.split("summary-lang-card")[1].split("summary-ip-card")[0];
+    assert.match(card, /Urgency/i, "grouped by category");
+    assert.match(card, /Act now<b>×2<\/b>/, "case variants merged with a count");
+    assert.ok(!/>act now</.test(card), "no separate lowercase duplicate");
+    assert.match(card, /lang-chip bad">Click here to verify/, "credential lures shown as high risk");
+    assert.match(card, /lang-chip bad">Wire transfer/i);
+    assert.match(lc.innerHTML, /summary-lang-card risk-border-high/);
+
+    const clean = { ...a, body: { text: "Hello, see you at lunch." }, languageAnalysis: analyzeLanguage("Hello, see you at lunch.") };
+    const cc = { innerHTML: "" };
+    await renderSummary(cc, clean, {});
+    assert.match(cc.innerHTML, /No suspicious language detected/);
+
+    const headersOnly = { ...a, body: null, languageAnalysis: null };
+    const hc = { innerHTML: "" };
+    await renderSummary(hc, headersOnly, {});
+    assert.match(hc.innerHTML, /No message body to analyze/);
+    passed++;
+  } catch (e) {
+    failures.push({ name: "summary language card lists detected phrases by category", message: e.message });
+  }
+
   const v = { innerHTML: "" };
   try {
     renderVerdict(v, a.score, null);

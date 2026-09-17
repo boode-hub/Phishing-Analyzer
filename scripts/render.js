@@ -150,6 +150,9 @@ export async function renderSummary(container, analysis, apiKeys) {
 
   html += '</div>';
 
+  // === LANGUAGE ===
+  html += renderLanguageCard(lang, analysis.body);
+
   // === SENDER IP ===
   // The originating IP is the one that matters: Received headers are prepended,
   // so the LAST one is where the message entered the mail system. The card
@@ -227,7 +230,63 @@ function ipLookupButtons(ip, apiKeys) {
   return `<span class="ip-actions">${copy}${vt}${abuse}</span>`;
 }
 
+// Credential and financial lures ask the victim to act against their own
+// interest; urgency and authority only apply pressure. Tone follows that.
+const LANG_TONE = { credential: "bad", financial: "bad", urgency: "warn", authority: "warn" };
+
+/**
+ * Quick Summary card listing the suspicious phrases found, grouped by
+ * category. The full analysis in the Body & Language panel is unchanged.
+ */
+function renderLanguageCard(lang, body) {
+  const header = (extra = "") =>
+    `<div class="card-header"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ICONS.message}</svg><h3>Language</h3>${extra}</div>`;
+
+  if (!body || !lang) {
+    return `<div class="summary-card summary-lang-card risk-border-neutral">${header()}<p class="lang-empty">No message body to analyze.</p></div>`;
+  }
+
+  const groups = Object.entries(lang.categories || {})
+    .map(([key, cat]) => {
+      // The same phrase can match in different cases ("Act now", "act now");
+      // show it once with a count.
+      const phrases = new Map();
+      for (const m of cat.matches || []) {
+        const norm = String(m.phrase).toLowerCase();
+        const entry = phrases.get(norm) || { phrase: m.phrase, count: 0 };
+        entry.count++;
+        phrases.set(norm, entry);
+      }
+      return { key, label: cat.label || key, total: cat.matchCount || 0, phrases: [...phrases.values()] };
+    })
+    .filter((g) => g.phrases.length);
+
+  if (!groups.length) {
+    return `<div class="summary-card summary-lang-card risk-border-low">${header()}<p class="lang-empty verified">No suspicious language detected.</p></div>`;
+  }
+
+  const total = groups.reduce((n, g) => n + g.total, 0);
+  const risk = groups.some((g) => LANG_TONE[g.key] === "bad") ? "high" : "medium";
+
+  return `<div class="summary-card summary-lang-card risk-border-${risk}">
+    ${header(`<span class="lang-total">${total} phrase${total === 1 ? "" : "s"}</span>`)}
+    <div class="lang-groups">${groups
+      .map(
+        (g) => `<div class="lang-group">
+          <div class="lang-group-head"><span class="lang-group-name">${esc(g.label)}</span><span class="lang-group-count ${LANG_TONE[g.key] || "warn"}">${g.total}</span></div>
+          <div class="lang-chips">${g.phrases
+            .map(
+              (p) => `<span class="lang-chip ${LANG_TONE[g.key] || "warn"}">${esc(p.phrase)}${p.count > 1 ? `<b>×${p.count}</b>` : ""}</span>`,
+            )
+            .join("")}</div>
+        </div>`,
+      )
+      .join("")}</div>
+  </div>`;
+}
+
 const ICONS = {
+  message: `<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>`,
   user: `<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`,
   edit: `<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>`,
   globe: `<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>`,
