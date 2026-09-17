@@ -13,7 +13,7 @@ import { extractIOCs } from "../scripts/extract-iocs.js";
 import { calculateScore } from "../scripts/score.js";
 import { sha256Bytes, md5Bytes } from "../scripts/hash-utils.js";
 import {
-  buildMarkdownReport,
+  buildHtmlReport,
   buildCsvReport,
   reportFilename,
   defangUrl,
@@ -130,39 +130,6 @@ await test("filenames and auth property names are not mistaken for domains", () 
   assert.equal(defangText("lure at evil.zip"), "lure at evil[.]zip", ".zip is a real TLD");
 });
 
-await test("markdown escaping stays readable as plain text but blocks link injection", async () => {
-  const md = buildMarkdownReport({
-    headers: { subject: "Pay evil.com [now](javascript:alert(1)) *urgent* Invoice_2025" },
-    auth: {}, iocs: {}, score: {},
-  }, { now: NOW });
-  const subjectRow = md.split("\n").find((l) => l.startsWith("| Subject"));
-  assert.ok(subjectRow.includes("evil[.]com"), "no backslashes around defang brackets");
-  assert.ok(subjectRow.includes("]\\("), "injected link syntax is broken");
-  assert.ok(subjectRow.includes("\\*urgent\\*"));
-  assert.ok(subjectRow.includes("Invoice_2025"), "intraword underscore left alone");
-});
-
-await test("an @mention in attacker-controlled text cannot ping anyone", async () => {
-  const md = buildMarkdownReport({ headers: { subject: "cc @security-team =@SUM(1)" }, auth: {}, iocs: {}, score: {} }, { now: NOW });
-  const subjectRow = md.split("\n").find((l) => l.startsWith("| Subject"));
-  assert.ok(!/(^|[^\\])@\w/.test(subjectRow), `unescaped mention: ${subjectRow}`);
-});
-
-await test("status icons do not misalign plain-text table columns", async () => {
-  const a = await analysis();
-  const md = buildMarkdownReport(a, { now: NOW });
-  const lines = md.split("\n");
-  const start = lines.findIndex((l) => /^\| Check\s+\| Result/.test(l));
-  const rows = lines.slice(start, start + 5);
-  assert.ok(start >= 0 && rows.length === 5 && rows[4].startsWith("| DMARC"), "found the auth table");
-  const width = (s) => [...s].reduce((w, ch) => {
-    const cp = ch.codePointAt(0);
-    return cp === 0xfe0f ? w : w + (cp >= 0x1f000 || (cp >= 0x2600 && cp <= 0x27bf) ? 2 : 1);
-  }, 0);
-  const widths = new Set(rows.map(width));
-  assert.equal(widths.size, 1, `rows render at different widths: ${[...widths]}`);
-});
-
 await test("free text is defanged in one pass", () => {
   assert.equal(
     defangText("Visit https://evil.test/x or paypal.com, mail a@b.test, ip 1.2.3.4"),
@@ -170,111 +137,118 @@ await test("free text is defanged in one pass", () => {
   );
 });
 
-// --- markdown ------------------------------------------------------------------------
+// --- html report ------------------------------------------------------------------
 
-await test("markdown contains no live indicators", async () => {
+/** Visible text of the report, with entities decoded — what a reader sees. */
+function visibleText(html) {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+await test("html contains no live indicators, in markup or in visible text", async () => {
   const a = await analysis();
-  const md = buildMarkdownReport(a, { now: NOW });
-  assert.ok(!/\b(https?|ftp):\/\//i.test(md), "no live scheme anywhere");
-  for (const v of liveValues(a)) {
-    assert.ok(!md.includes(v), `live indicator leaked: ${v}`);
+  const html = buildHtmlReport(a, { now: NOW });
+  const text = visibleText(html);
+  for (const body of [html, text]) {
+    assert.ok(!/\b(https?|ftp):\/\//i.test(body), "no live scheme anywhere");
+    for (const v of liveValues(a)) assert.ok(!body.includes(v), `live indicator leaked: ${v}`);
   }
-  assert.ok(!/[a-z0-9]@[a-z0-9-]+\.[a-z]/i.test(md), "no live email address");
+  assert.ok(!/[a-z0-9]@[a-z0-9-]+\.[a-z]/i.test(text), "no live email address");
 });
 
-await test("markdown keeps hashes intact", async () => {
+await test("html can neither load nor run anything", async () => {
   const a = await analysis();
-  const md = buildMarkdownReport(a, { now: NOW });
-  assert.ok(md.includes(createHash("sha256").update(exe).digest("hex")));
-  assert.ok(md.includes(createHash("md5").update(exe).digest("hex")));
+  const html = buildHtmlReport(a, { now: NOW });
+  assert.match(html, /http-equiv="Content-Security-Policy" content="default-src 'none'/);
+  assert.ok(!/<script/i.test(html), "no script elements");
+  assert.ok(!/\s(src|srcset|action|formaction)=/i.test(html), "no external resource attributes");
+  assert.ok(!/@import|url\(\s*['"]?(?!#)/i.test(html), "no stylesheet imports or url() loads");
+  const hrefs = [...html.matchAll(/\shref="([^"]*)"/g)].map((m) => m[1]);
+  assert.ok(hrefs.every((h) => h.startsWith("#")), `only in-page links: ${hrefs.filter((h) => !h.startsWith("#"))}`);
+  assert.ok(!/\son[a-z]+=/i.test(html), "no inline event handlers");
 });
 
-await test("markdown has the expected structure", async () => {
+await test("attacker-controlled content is escaped, never markup", () => {
+  const evil = "<img src=x onerror=alert(1)></style><script>alert(2)</script>\"'&";
+  const html = buildHtmlReport({
+    headers: { subject: evil, from: { email: "a@b.test", name: evil }, xMailer: evil },
+    auth: {},
+    iocs: { urls: [], domains: [], ips: [], emails: [], attachments: [{ value: evil, riskFlags: [{ type: "high", label: evil }] }], mismatchedLinks: [] },
+    score: { tier: evil, reasons: [evil], caveats: [evil] },
+  }, { now: NOW });
+  assert.ok(!html.includes("<img src=x"), "img tag injected");
+  assert.ok(!html.includes("<script>alert(2)"), "script tag injected");
+  assert.ok(!/<\/style><script>/.test(html), "style breakout");
+  assert.ok(html.includes("&lt;img src=x onerror=alert(1)&gt;"), "shown as text");
+});
+
+await test("html keeps hashes intact and selectable", async () => {
   const a = await analysis();
-  const md = buildMarkdownReport(a, { now: NOW });
-  for (const heading of [
-    "# Phishing Analysis Report",
-    "## Message",
-    "## Verdict",
-    "## Authentication",
-    "## Sender Path",
-    "## Indicators of Compromise",
-    "### URLs",
-    "### Domains",
-    "### IP Addresses",
-    "### Email Addresses",
-    "### Attachments",
-    "### Deceptive Links",
-  ]) {
-    assert.ok(md.includes(heading), `missing ${heading}`);
+  const html = buildHtmlReport(a, { now: NOW });
+  const sha = createHash("sha256").update(exe).digest("hex");
+  assert.ok(html.includes(`<code class="hash">${sha}</code>`));
+  assert.ok(html.includes(createHash("md5").update(exe).digest("hex")));
+});
+
+await test("html has every section, the verdict and generation time", async () => {
+  const a = await analysis();
+  const html = buildHtmlReport(a, { now: NOW });
+  for (const id of ["message", "verdict", "authentication", "sender-path", "indicators"]) {
+    assert.ok(html.includes(`id="${id}"`), `missing section ${id}`);
+    assert.ok(html.includes(`href="#${id}"`), `missing nav link ${id}`);
   }
-  assert.match(md, /🔴 \*\*HIGH RISK\*\*/);
-  assert.match(md, /Generated 2026-09-17 13:45 UTC/);
+  assert.match(html, /class="hero bad"/);
+  assert.match(html, /<div class="hero-tier">High Risk<\/div>/);
+  assert.match(html, /2026-09-17 13:45 UTC/);
+  assert.match(html, /<title>Phishing Analysis Report — /);
+  assert.match(html, /@media print/);
+  assert.match(html, /@media \(max-width:720px\)/);
 });
 
-await test("every markdown table row has the same number of columns", async () => {
+await test("html is well-formed: every opened block is closed", async () => {
   const a = await analysis();
-  const md = buildMarkdownReport(a, { now: NOW });
-  const lines = md.split("\n");
-  const cells = (line) => line.replace(/\\\|/g, "").split("|").length;
-  let i = 0;
-  let tables = 0;
-  while (i < lines.length) {
-    if (lines[i].startsWith("|")) {
-      const expected = cells(lines[i]);
-      tables++;
-      while (i < lines.length && lines[i].startsWith("|")) {
-        assert.equal(cells(lines[i]), expected, `ragged table row: ${lines[i]}`);
-        i++;
-      }
-    } else i++;
+  const html = buildHtmlReport(a, { now: NOW }).replace(/<style[\s\S]*?<\/style>/, "");
+  for (const tag of ["section", "div", "table", "thead", "tbody", "tr", "td", "th", "ol", "ul", "li", "dl", "dt", "dd", "code", "span", "nav", "header", "footer"]) {
+    const open = (html.match(new RegExp(`<${tag}[\\s>]`, "g")) || []).length;
+    const close = (html.match(new RegExp(`</${tag}>`, "g")) || []).length;
+    assert.equal(open, close, `<${tag}> opened ${open} times, closed ${close}`);
   }
-  assert.ok(tables >= 6, `expected several tables, found ${tables}`);
 });
 
-await test("pipes inside values do not break tables", async () => {
+await test("meter widths are clamped numbers", async () => {
   const a = await analysis();
-  const md = buildMarkdownReport(a, { now: NOW });
-  // From display name "PayPal | Security" and a URL containing "|".
-  assert.match(md, /PayPal \\\| Security/);
-});
-
-await test("pipes outside tables are not backslash-escaped", async () => {
-  const a = await analysis();
-  const md = buildMarkdownReport(a, { now: NOW });
-  const urlLine = md.split("\n").find((l) => /^\d+\. .*203\[\.\]0\[\.\]113\[\.\]9/.test(l));
-  assert.ok(urlLine, "IP URL listed");
-  assert.ok(urlLine.includes("/x|y") && !urlLine.includes("\\|"), `literal backslash in list: ${urlLine}`);
-});
-
-await test("markdown special characters in the subject are escaped", async () => {
-  const a = await analysis();
-  const md = buildMarkdownReport(a, { now: NOW });
-  assert.match(md, /\\\*locked\\\*/);
+  a.score.score = 250;
+  a.score.breakdown = { auth: -5, iocs: 1e9, language: "50%;background:url(x)" };
+  const html = buildHtmlReport(a, { now: NOW });
+  const widths = [...html.matchAll(/style="([^"]*)"/g)].map((m) => m[1]);
+  for (const w of widths) assert.match(w, /^width:(\d{1,2}|100)%$/, `unexpected style: ${w}`);
 });
 
 await test("an unwrapped destination is nested under its wrapper, not listed twice", async () => {
   const a = await analysis();
-  const md = buildMarkdownReport(a, { now: NOW });
+  const html = buildHtmlReport(a, { now: NOW });
   const dest = defangUrl(`https://xn--pypal-4ve.com/verify#${victim}`);
-  const occurrences = md.split(dest).length - 1;
-  assert.ok(occurrences >= 1, "destination must be shown");
-  assert.match(md, /\*\*Real destination:\*\* `hxxps\[:\/\/\]xn--pypal-4ve\[\.\]com/);
-  const topLevel = md.split("\n").filter((l) => /^\d+\. /.test(l) && l.includes(dest));
-  assert.equal(topLevel.length, 0, "must not also appear as its own numbered item");
+  const cards = html.split('<li class="url-card">').slice(1);
+  const owning = cards.filter((c) => c.includes(dest));
+  assert.equal(owning.length, 1, "destination appears in exactly one URL card");
+  assert.match(owning[0], /Real destination/);
+  assert.match(owning[0], /safelinks/, "and that card is the Safe Links wrapper");
 });
 
-await test("lookup results are included when available", async () => {
+await test("lookup results are included when available, columns omitted when not", async () => {
   const a = await analysis();
   const lookups = new Map([
     ["vt:203.0.113.50", "Malicious — 12/90 engines"],
     ["abuse:203.0.113.50", "87% confidence · 34 reports · RU"],
   ]);
-  const md = buildMarkdownReport(a, { lookups, now: NOW });
-  assert.match(md, /Malicious — 12\/90 engines/);
-  assert.match(md, /87% confidence/);
-  const plain = buildMarkdownReport(a, { now: NOW });
-  assert.ok(!/\| AbuseIPDB/.test(plain), "no empty lookup column when nothing was looked up");
+  const html = buildHtmlReport(a, { lookups, now: NOW });
+  assert.match(html, /Malicious — 12\/90 engines/);
+  assert.match(html, /87% confidence/);
+  const plain = buildHtmlReport(a, { now: NOW });
+  assert.ok(!plain.includes("<th>AbuseIPDB</th>"), "no empty lookup column");
 });
 
 // --- csv ------------------------------------------------------------------------------

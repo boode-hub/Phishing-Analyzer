@@ -9,7 +9,7 @@ import { analyzeLanguage } from "./analyze-language.js";
 import { calculateScore } from "./score.js";
 import { sha256Bytes, md5Bytes } from "./hash-utils.js";
 import { isValidIP, isRoutableIP } from "./ip-utils.js";
-import { buildMarkdownReport, buildCsvReport, reportFilename } from "./report.js";
+import { buildHtmlReport, buildCsvReport, reportFilename } from "./report.js";
 import {
   renderVerdict,
   renderAuth,
@@ -131,11 +131,10 @@ function queryElements() {
     abuseipdbKeyInput: "abuseipdb-key",
     corsProxyUrlInput: "cors-proxy-url",
     exportSection: "export-section",
-    exportMd: "export-md",
+    exportHtml: "export-html",
     exportCsv: "export-csv",
     exportRaw: "export-raw",
     exportDownload: "export-download",
-    exportCopy: "export-copy",
     exportStatus: "export-status",
     apiAvailability: "api-availability",
     proxyField: "proxy-field",
@@ -214,8 +213,7 @@ function init() {
   renderApiAvailability();
 
   elements.exportDownload?.addEventListener("click", handleExportDownload);
-  elements.exportCopy?.addEventListener("click", handleExportCopy);
-  for (const box of [elements.exportMd, elements.exportCsv]) {
+  for (const box of [elements.exportHtml, elements.exportCsv]) {
     box?.addEventListener("change", syncExportControls);
   }
   syncExportControls();
@@ -428,9 +426,9 @@ function hideResults() {
 
 /** Download needs at least one format; the raw-values option only applies to CSV. */
 function syncExportControls() {
-  const md = elements.exportMd?.checked;
+  const report = elements.exportHtml?.checked;
   const csv = elements.exportCsv?.checked;
-  if (elements.exportDownload) elements.exportDownload.disabled = !md && !csv;
+  if (elements.exportDownload) elements.exportDownload.disabled = !report && !csv;
   if (elements.exportRaw) {
     elements.exportRaw.disabled = !csv;
     elements.exportRaw.closest("label")?.classList.toggle("disabled", !csv);
@@ -451,11 +449,11 @@ function handleExportDownload() {
   const now = new Date();
   const files = [];
 
-  if (elements.exportMd?.checked) {
+  if (elements.exportHtml?.checked) {
     files.push({
-      name: reportFilename(currentAnalysis, "md", now),
-      type: "text/markdown;charset=utf-8",
-      content: buildMarkdownReport(currentAnalysis, { lookups: lookupResults, now }),
+      name: reportFilename(currentAnalysis, "html", now),
+      type: "text/html;charset=utf-8",
+      content: buildHtmlReport(currentAnalysis, { lookups: lookupResults, now }),
     });
   }
   if (elements.exportCsv?.checked) {
@@ -475,21 +473,9 @@ function handleExportDownload() {
   files.forEach((f, i) => setTimeout(() => downloadFile(f), i * 350));
   exportStatus(
     files.length === 2
-      ? "Downloaded Markdown and CSV reports."
+      ? "Downloaded the HTML report and CSV."
       : `Downloaded ${files[0].name}`,
   );
-}
-
-async function handleExportCopy() {
-  if (!currentAnalysis) return;
-  try {
-    await navigator.clipboard.writeText(
-      buildMarkdownReport(currentAnalysis, { lookups: lookupResults }),
-    );
-    exportStatus("Markdown report copied to the clipboard.");
-  } catch {
-    exportStatus("Could not access the clipboard — use Download instead.", "error");
-  }
 }
 
 function downloadFile({ name, type, content }) {
