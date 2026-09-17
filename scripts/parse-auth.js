@@ -90,6 +90,10 @@ export function parseAuth(headers) {
   const trust = assessHeaderTrust(authoritative, lower, arAll, headers);
   trust.warnings.push(...crossCheckSpf(spf, senderIp));
 
+  const arc = parseArc(headers);
+  trust.warnings.push(...arc.warnings);
+  const anomalies = detectAnomalies(headers, receivedChain);
+
   const overallStatus = determineOverallStatus({
     spf,
     dkim,
@@ -116,8 +120,116 @@ export function parseAuth(headers) {
     receivedChain,
     senderIp,
     trust,
+    arc,
+    anomalies,
     overallStatus,
   };
+}
+
+// ===== ARC (RFC 8617) =====
+
+/**
+ * A mailing list or a forwarder legitimately breaks SPF and DKIM. ARC is how
+ * the hop that did the breaking records what it saw: each hop adds a set of
+ * ARC-Authentication-Results, ARC-Message-Signature and ARC-Seal headers, and
+ * i=1 is the hop closest to the original sender.
+ *
+ * ARC is reported, never scored: the seals are only as trustworthy as the hops
+ * that wrote them, and this tool cannot verify their signatures.
+ */
+function parseArc(headers) {
+  const aar = asArray(headers.all?.["arc-authentication-results"]);
+  const seals = asArray(headers.all?.["arc-seal"]);
+  const warnings = [];
+
+  if (!aar.length && !seals.length) {
+    return { present: false, sets: 0, oldest: null, chainValid: null, warnings };
+  }
+
+  const instance = (raw) => Number((String(raw).match(/\bi\s*=\s*(\d+)/) || [])[1] || 0);
+  // i=1 is the oldest hop: what the first relay saw before anything was altered.
+  const oldestRaw = [...aar].sort((a, b) => instance(a) - instance(b))[0] || null;
+  const oldestParsed = oldestRaw ? parseAuthResults(oldestRaw.replace(/^\s*i\s*=\s*\d+\s*;/, "")) : null;
+  const resultOf = (method) =>
+    normalizeAuthStatus(oldestParsed?.methods?.[method]?.[0]?.result || null);
+
+  const cv = seals.map((s) => (String(s).match(/\bcv\s*=\s*([a-z]+)/i) || [])[1]?.toLowerCase());
+  const chainValid = cv.length ? !cv.includes("fail") : null;
+  if (chainValid === false) {
+    warnings.push(
+      "The ARC chain is marked broken (cv=fail) — a relay could not confirm what the previous hop reported.",
+    );
+  }
+
+  return {
+    present: true,
+    sets: Math.max(aar.length, seals.length),
+    chainValid,
+    oldest: oldestRaw
+      ? {
+          authservId: oldestParsed?.authservId || null,
+          spf: resultOf("spf"),
+          dkim: resultOf("dkim"),
+          dmarc: resultOf("dmarc"),
+          raw: oldestRaw,
+        }
+      : null,
+    warnings,
+  };
+}
+
+// ===== Header anomalies =====
+
+/**
+ * Things that are odd about the headers themselves rather than about
+ * authentication: a Date that disagrees with the delivery timestamps, a missing
+ * or foreign Message-ID, and reply headers on a message that is not a reply —
+ * the shape of a message injected into an existing conversation.
+ *
+ * Each carries its own severity; none of them is proof on its own.
+ */
+function detectAnomalies(headers, chain) {
+  const out = [];
+  const add = (severity, message) => out.push({ severity, message });
+
+  const delivered = chain?.[0]?.timestamp || null;
+  const dateValue = headers.date ? Date.parse(headers.date) : NaN;
+  if (delivered && !Number.isNaN(dateValue)) {
+    const hours = Math.abs(dateValue - delivered) / 3600000;
+    if (hours > 24) {
+      add(
+        "medium",
+        `The Date header is ${Math.round(hours)} hours away from when the servers actually handled the message.`,
+      );
+    }
+  }
+
+  if (!headers.messageId) {
+    add("medium", "The message carries no Message-ID, which normal mail systems always add.");
+  } else {
+    const idDomain = String(headers.messageId).match(/@([^>\s]+)/)?.[1]?.toLowerCase();
+    const fromDomain = domainPart(headers.from?.email);
+    const idOrg = orgDomain(idDomain);
+    const fromOrg = orgDomain(fromDomain);
+    if (idOrg && fromOrg && idOrg !== fromOrg) {
+      add(
+        "low",
+        `The Message-ID was issued by ${idDomain}, not by the From domain (${fromDomain}).`,
+      );
+    }
+  }
+
+  const hasReplyHeaders =
+    !!headers.all?.["in-reply-to"] || !!headers.all?.["references"];
+  const subject = String(headers.subject || "");
+  if (hasReplyHeaders && subject && !/^\s*(re|aw|sv|antw|res)\s*:/i.test(subject)) {
+    add(
+      "medium",
+      "The message claims to continue an existing thread but its subject is not a reply — a way to make a new message look like part of a trusted conversation.",
+    );
+  }
+
+  return out;
 }
 
 // ===== Authentication-Results (RFC 8601) =====

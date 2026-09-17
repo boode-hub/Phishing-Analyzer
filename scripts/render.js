@@ -62,6 +62,11 @@ export async function renderSummary(container, analysis, apiKeys) {
     ${(sc.caveats || []).map((c) => `<div class="summary-caveat">&#9888; ${esc(c)}</div>`).join("")}
   </div>`;
 
+  // === SENDER IDENTITY ===
+  // Authentication cannot answer "is this who it claims to be", so these
+  // findings sit directly under the verdict rather than inside a panel.
+  html += renderIdentityCard(analysis.identity);
+
   // === TOP ROW: Auth badges + Score ===
   html += '<div class="summary-top-row">';
 
@@ -185,6 +190,7 @@ export async function renderSummary(container, analysis, apiKeys) {
         ${ipLookupButtons(originIp, apiKeys)}
       </div>
       ${originHost ? `<div class="ip-host mono">${esc(originHost)}</div>` : ""}
+      ${originIp ? whoisPanel("ip", originIp) : ""}
       ${
         internalIp
           ? `<div class="ip-internal">First hop recorded <span class="mono">${esc(internalIp)}</span>, a private address${senderIp.privateHopsSkipped ? ` (plus ${senderIp.privateHopsSkipped} more private hop${senderIp.privateHopsSkipped > 1 ? "s" : ""})` : ""}. ${originIp ? "Walked outward to the first public address above." : "No public address appears anywhere in the chain."}</div>`
@@ -285,6 +291,33 @@ function renderLanguageCard(lang, body) {
         </div>`,
       )
       .join("")}</div>
+  </div>`;
+}
+
+/**
+ * Registration data for one domain or address, fetched only when opened.
+ * Filled in by main.js, which is where the local server is reachable from.
+ */
+export function whoisPanel(kind, value) {
+  return `<details class="whois-panel" data-kind="${esc(kind)}" data-value="${esc(value)}"><summary>WHOIS &amp; registration</summary><div class="whois-body"><span class="whois-loading">Opening…</span></div></details>`;
+}
+
+/** Sender identity findings: display-name tricks and lookalike domains. */
+function renderIdentityCard(identity) {
+  const findings = identity?.findings || [];
+  if (!findings.length) return "";
+  const worst = findings.some((f) => f.severity === "high") ? "high" : "medium";
+  return `<div class="identity-card risk-border-${worst}">
+    <div class="card-header">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ICONS.user}</svg>
+      <h3>Sender identity</h3>
+      <span class="identity-count ${worst}">${findings.length}</span>
+    </div>
+    <ul class="identity-list">${findings
+      .map(
+        (f) => `<li class="identity-item ${esc(f.severity)}"><span class="identity-title">${esc(f.title)}</span><span class="identity-detail">${esc(f.detail)}</span></li>`,
+      )
+      .join("")}</ul>
   </div>`;
 }
 
@@ -543,6 +576,50 @@ export function renderAuth(c, auth) {
     )
     .join("");
 
+  // Live DNS: what the domain publishes right now, resolved by this machine.
+  const fromDomain2 = align.fromDomain || null;
+  const dnsHtml = fromDomain2
+    ? `<div class="auth-section" id="live-dns">
+        <h3>Published policy <span class="dim-note">what ${esc(fromDomain2)} publishes in DNS right now</span></h3>
+        <button class="btn-sm" data-act="dns" data-domain="${esc(fromDomain2)}">Check DNS records</button>
+        <div class="dns-body"></div>
+      </div>`
+    : "";
+
+  // ARC: what the forwarding hops recorded before the message reached us.
+  const arc = auth.arc;
+  const arcHtml = arc?.present
+    ? `<div class="auth-section"><h3>ARC chain <span class="dim-note">added by forwarders and mailing lists</span></h3>
+        <div class="arc-box ${arc.chainValid === false ? "bad" : ""}">
+          <div class="arc-line">${arc.sets} ARC set${arc.sets === 1 ? "" : "s"} present${
+            arc.chainValid === false
+              ? " — the chain is marked broken (cv=fail)"
+              : arc.chainValid
+                ? " — each hop sealed the previous one"
+                : ""
+          }.</div>
+          ${
+            arc.oldest
+              ? `<div class="arc-line">The first hop${arc.oldest.authservId ? ` (${esc(arc.oldest.authservId)})` : ""} recorded
+                  <span class="mono">SPF ${esc(arc.oldest.spf.toUpperCase())}</span>,
+                  <span class="mono">DKIM ${esc(arc.oldest.dkim.toUpperCase())}</span>,
+                  <span class="mono">DMARC ${esc(arc.oldest.dmarc.toUpperCase())}</span>
+                  for the original sender.</div>
+                <div class="arc-note">ARC is informational: these seals are written by the forwarding servers and are not verified here.</div>`
+              : ""
+          }
+        </div></div>`
+    : "";
+
+  const anomalies = auth.anomalies || [];
+  const anomalyHtml = anomalies.length
+    ? `<div class="auth-section"><h3>Header anomalies</h3><div class="anomaly-list">${anomalies
+        .map(
+          (a) => `<div class="anomaly ${esc(a.severity)}"><span class="anomaly-dot"></span>${esc(a.message)}</div>`,
+        )
+        .join("")}</div></div>`
+    : "";
+
   const trustHtml = (auth.trust?.warnings || []).length
     ? `<div class="auth-section"><h3>Header Trust</h3><div class="trust-warnings">${auth.trust.warnings
         .map((w) => `<div class="trust-warning">&#9888; ${esc(w)}</div>`)
@@ -553,7 +630,7 @@ export function renderAuth(c, auth) {
     ? `<p class="auth-source-note">Results reported by <span class="mono">${esc(auth.trust.authservId)}</span>${auth.trust.authResultsCount > 1 ? ` — ${auth.trust.authResultsCount} Authentication-Results headers present, only the topmost is trusted.` : "."}</p>`
     : "";
 
-  c.innerHTML = `<div class="auth-section"><h3>Mechanism Results</h3>${sourceNote}<div class="auth-mechanisms">${mechHtml || "<p>No auth data</p>"}</div></div>${trustHtml}<div class="auth-section"><h3>Domain Alignment</h3>${verdict}<div class="table-scroll"><table class="alignment-table"><thead><tr><th>Check</th><th>Comparison</th><th>Result</th></tr></thead><tbody>${alignRows || '<tr><td colspan="3">No alignment data</td></tr>'}</tbody></table></div></div><div class="auth-section"><h3>Received Chain</h3><div class="received-chain">${recvHtml || "<p>No received chain data</p>"}</div></div>`;
+  c.innerHTML = `<div class="auth-section"><h3>Mechanism Results</h3>${sourceNote}<div class="auth-mechanisms">${mechHtml || "<p>No auth data</p>"}</div></div>${dnsHtml}${arcHtml}${anomalyHtml}${trustHtml}<div class="auth-section"><h3>Domain Alignment</h3>${verdict}<div class="table-scroll"><table class="alignment-table"><thead><tr><th>Check</th><th>Comparison</th><th>Result</th></tr></thead><tbody>${alignRows || '<tr><td colspan="3">No alignment data</td></tr>'}</tbody></table></div></div><div class="auth-section"><h3>Received Chain</h3><div class="received-chain">${recvHtml || "<p>No received chain data</p>"}</div></div>`;
 }
 
 // ===== IOCS =====
@@ -742,7 +819,12 @@ function renderIOCSection(id, title, items, type, apiKeys, showAll) {
         }</summary><div class="decode-body"></div></details>`;
       }
 
-      return `<tr class="ioc-row"><td class="ioc-value-cell"><span class="ioc-original mono">${esc(value)}</span><span class="ioc-defanged mono hidden">${esc(defanged)}</span>${hashHtml}${decodeHtml}</td><td class="ioc-risk-cell">${riskHtml}</td><td class="ioc-actions"><button class="btn-sm" data-act="copy-ioc" title="Copy">Copy</button><button class="btn-sm" data-act="defang" title="Defang">Defang</button><div class="ioc-lookup-btns">${vtBtn}${emailDomainBtn}${abuseBtn}</div></td></tr><tr class="lookup-result-row hidden" data-ioc-value="${esc(value)}"><td colspan="3" class="lookup-result-cell"><div class="lookup-result-content"></div></td></tr>`;
+      // Registration data is the fastest way to tell a week-old throwaway
+      // domain from a company's real one.
+      const whoisHtml =
+        type === "domain" || type === "ip" ? whoisPanel(type, value) : "";
+
+      return `<tr class="ioc-row"><td class="ioc-value-cell"><span class="ioc-original mono">${esc(value)}</span><span class="ioc-defanged mono hidden">${esc(defanged)}</span>${hashHtml}${decodeHtml}${whoisHtml}</td><td class="ioc-risk-cell">${riskHtml}</td><td class="ioc-actions"><button class="btn-sm" data-act="copy-ioc" title="Copy">Copy</button><button class="btn-sm" data-act="defang" title="Defang">Defang</button><div class="ioc-lookup-btns">${vtBtn}${emailDomainBtn}${abuseBtn}</div></td></tr><tr class="lookup-result-row hidden" data-ioc-value="${esc(value)}"><td colspan="3" class="lookup-result-cell"><div class="lookup-result-content"></div></td></tr>`;
     })
     .join("");
 

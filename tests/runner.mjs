@@ -344,10 +344,13 @@ assertArrayLength(
   0,
   "Spoofed IOCs: no mismatched link for plain link text",
 );
-assertArrayLength(
-  spoofedIOCs.urls[0].risks,
-  0,
-  "Spoofed IOCs: plain URL carries no risk flags",
+// The link text is plain words, so there is no display/destination mismatch —
+// but the destination itself imitates a brand ("paypa1" for "paypal"), which
+// the lookalike check now catches on its own.
+assertEqual(
+  spoofedIOCs.urls[0].risks.map((r) => r.type).join(","),
+  "brand-lookalike",
+  "Spoofed IOCs: the lookalike destination is flagged",
 );
 assertTruthy(
   Array.isArray(spoofedIOCs.urls[0].riskFlags),

@@ -20,10 +20,11 @@ const TIER_SUSPICIOUS = 30;
  * @param {Object} iocs - Extracted IOCs
  * @param {Object} languageAnalysis - Language analysis results
  * @param {Object} [headers] - Parsed headers, for evidence-quality caveats
+ * @param {Object} [identity] - Sender identity findings (analyze-identity.js)
  * @returns {Object} Risk score and breakdown
  */
-export function calculateScore(auth, iocs, languageAnalysis, headers) {
-  const authResult = scoreAuthentication(auth);
+export function calculateScore(auth, iocs, languageAnalysis, headers, identity) {
+  const authResult = scoreAuthentication(auth, identity);
   const iocResult = scoreIOCs(iocs);
   const langResult = scoreLanguage(languageAnalysis);
 
@@ -36,9 +37,17 @@ export function calculateScore(auth, iocs, languageAnalysis, headers) {
   // DKIM and DMARC all failing on a misaligned domain — reaches "High Risk" on
   // its own, without needing a suspicious link to tip it over. Language is the
   // weakest signal and cannot reach any tier by itself.
-  const total = Math.round(
+  let total = Math.round(
     Math.min(authScore * 0.6 + iocScore * 0.25 + langScore * 0.15, 100),
   );
+
+  // Business email compromise is the one attack this scoring cannot see: the
+  // mail is sent from a real, fully authenticated mailbox, carries no link and
+  // no attachment, and only its wording gives it away. Weighted normally that
+  // lands at "Low Risk", which is exactly the message an accounts team must not
+  // wave through, so a payment-fraud phrase forces at least "Suspicious".
+  const becMatches = languageAnalysis?.categories?.bec?.matchCount || 0;
+  if (becMatches && total < TIER_SUSPICIOUS) total = TIER_SUSPICIOUS;
 
   const reasons = [
     ...authResult.reasons,
@@ -61,7 +70,14 @@ export function calculateScore(auth, iocs, languageAnalysis, headers) {
       iocs: [...new Set(iocResult.reasons)],
       language: [...new Set(langResult.reasons)],
     },
-    caveats: evidenceCaveats(auth, headers),
+    caveats: [
+      ...evidenceCaveats(auth, headers),
+      ...(becMatches
+        ? [
+            "This message asks about payments or bank details. Confirm any change by phone on a number you already had — never one from this email — before anything is paid.",
+          ]
+        : []),
+    ],
     breakdown: {
       // "auth" is the key the renderer reads. "authentication" is kept as an
       // alias so nothing that reached for the old name silently reads 0.
@@ -116,11 +132,19 @@ function evidenceCaveats(auth, headers) {
  * headers alone; a missing SPF record is weak, because plenty of small senders
  * never published one.
  */
-function scoreAuthentication(auth) {
+function scoreAuthentication(auth, identity) {
   const reasons = [];
   let score = 0;
 
-  if (!auth || !auth.mechanisms) return { score: 0, reasons };
+  // Who the message claims to be from. A display name reading "PayPal Support"
+  // on a gmail.com account authenticates perfectly and is still a fake.
+  for (const f of identity?.findings || []) {
+    const points = f.severity === "high" ? 20 : 8;
+    score += points;
+    reasons.push(`${f.title} — ${f.detail}`);
+  }
+
+  if (!auth || !auth.mechanisms) return { score: Math.max(0, score), reasons };
 
   const add = (points, reason) => {
     score += points;
@@ -201,6 +225,12 @@ function scoreAuthentication(auth) {
     add(12, w);
   }
 
+  // Odd headers: a Date that disagrees with delivery, a foreign Message-ID,
+  // reply headers on a message that is not a reply.
+  for (const a of auth.anomalies || []) {
+    add(a.severity === "high" ? 12 : a.severity === "medium" ? 6 : 3, a.message);
+  }
+
   // Full authentication is affirmative evidence, but only when all three
   // mechanisms actually ran. It can reduce accumulated noise, never go
   // negative on its own.
@@ -239,6 +269,16 @@ function scoreIOCs(iocs) {
   score += diminishing(high.length, 25, 12);
   score += diminishing(medium.length, 8, 4);
 
+  if (urls.some((u) => hasType(u, "script-url")))
+    reasons.push("A link runs script or carries its content inside itself instead of opening a page");
+  if (urls.some((u) => hasType(u, "credentials-url")))
+    reasons.push("A link hides its real destination behind an \"@\", so it reads as a trusted site");
+  if (urls.some((u) => hasType(u, "brand-lookalike")))
+    reasons.push("A link's domain imitates a well-known brand");
+  if (urls.some((u) => hasType(u, "direct-download")))
+    reasons.push("A link downloads a program or archive directly");
+  if (urls.some((u) => hasType(u, "risky-tld")))
+    reasons.push("A link uses a domain ending that is heavily abused");
   if (urls.some((u) => hasType(u, "mismatch")))
     reasons.push("A link's display text does not match its actual destination");
   if (urls.some((u) => hasType(u, "ip-url")))

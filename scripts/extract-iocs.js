@@ -10,6 +10,8 @@ import {
   receivedFromIP,
 } from "./ip-utils.js";
 import { unwrapRedirect } from "./url-decode.js";
+import { lookalikeOf } from "./analyze-identity.js";
+import { inspectAttachment } from "./file-type.js";
 
 // Known URL shorteners
 const URL_SHORTENERS = [
@@ -79,6 +81,22 @@ const DOUBLE_EXT_PATTERNS = [
 
 // Punycode pattern
 const PUNYCODE_PATTERN = /xn--/i;
+
+// Top-level domains with a long-standing abuse problem, plus the two that are
+// also common file extensions (.zip and .mov), which is the point of them.
+const RISKY_TLDS = new Set([
+  "zip", "mov", "top", "xyz", "gq", "tk", "cf", "ml", "ga", "click", "link",
+  "live", "rest", "country", "kim", "work", "party", "review", "trade", "date",
+  "wang", "su", "icu", "cyou", "sbs", "buzz", "monster", "quest", "fit",
+  "casa", "best", "autos", "bond", "cfd", "lol", "makeup", "skin",
+]);
+
+// A link that ends in one of these downloads a file rather than opening a page.
+const EXECUTABLE_URL_EXT = new Set([
+  "exe", "scr", "js", "jar", "msi", "vbs", "hta", "ps1", "bat", "cmd", "com",
+  "pif", "dll", "iso", "img", "lnk", "apk", "dmg", "jse", "wsf",
+]);
+const ARCHIVE_URL_EXT = new Set(["zip", "rar", "7z", "gz", "tar", "cab", "tgz", "ace"]);
 
 /**
  * Extract IOCs from headers and body
@@ -314,8 +332,60 @@ function deduplicateAndFlag(iocs) {
     url.riskFlags = [];
     url.risks = [];
     const parsed = parseUrl(url.value);
+    const flag = (type, label, riskType, message) => {
+      url.riskFlags.push({ type, label });
+      url.risks.push({ type: riskType, level: type, message });
+    };
+
+    // A link does not have to point at a web page at all. "javascript:" runs
+    // code in whatever page opens it and "data:text/html" carries the whole
+    // fake login page inside the link, so neither ever touches a server a
+    // filter could check.
+    const scheme = (parsed?.protocol || "").replace(":", "").toLowerCase();
+    if (scheme === "javascript" || scheme === "vbscript") {
+      flag("high", "Script URL", "script-url", "Link runs script instead of opening a page");
+    } else if (scheme === "data") {
+      flag("high", "Data URL", "script-url", "Link carries its content inside itself (data: URL)");
+    }
 
     if (parsed) {
+      // https://accounts.google.com@evil.test/ — everything before the @ is a
+      // username, and the real host is the part most readers never look at.
+      if (parsed.username) {
+        flag(
+          "high",
+          "Credentials in URL",
+          "credentials-url",
+          `Everything before "@" is ignored by the browser: this link goes to ${parsed.hostname}`,
+        );
+      }
+
+      if (parsed.port && !["80", "443"].includes(parsed.port)) {
+        flag("medium", `Port ${parsed.port}`, "odd-port", "Link uses a non-standard port");
+      }
+
+      const urlExt = (parsed.pathname.match(/\.([A-Za-z0-9]+)$/) || [])[1]?.toLowerCase();
+      if (urlExt && EXECUTABLE_URL_EXT.has(urlExt)) {
+        flag("high", `Downloads .${urlExt}`, "direct-download", `Link downloads a .${urlExt} file`);
+      } else if (urlExt && ARCHIVE_URL_EXT.has(urlExt)) {
+        flag("medium", `Downloads .${urlExt}`, "direct-download", `Link downloads a .${urlExt} archive`);
+      }
+
+      const tld = parsed.hostname.split(".").pop()?.toLowerCase();
+      if (tld && RISKY_TLDS.has(tld)) {
+        flag("medium", `.${tld} domain`, "risky-tld", `".${tld}" is heavily used for abuse`);
+      }
+
+      const look = lookalikeOf(parsed.hostname);
+      if (look) {
+        flag(
+          "high",
+          `Imitates ${look.brand}`,
+          "brand-lookalike",
+          `${parsed.hostname} imitates ${look.brand} (${look.kind})`,
+        );
+      }
+
       // Check for URL shortener
       if (URL_SHORTENERS.some((s) => isDomainOrSubdomain(parsed.hostname, s))) {
         url.riskFlags.push({ type: "medium", label: "URL Shortener" });
@@ -461,6 +531,13 @@ function deduplicateAndFlag(iocs) {
         message: "Suspicious double file extension",
       });
       att.risky = true;
+    }
+
+    // What the bytes actually are, which the filename may be hiding.
+    for (const finding of inspectAttachment(att)) {
+      att.riskFlags.push({ type: finding.type, label: finding.label });
+      att.risks.push({ type: "content", level: finding.type, message: finding.message });
+      if (finding.type === "high") att.risky = true;
     }
 
     // Check for risky extension

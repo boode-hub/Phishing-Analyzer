@@ -7,6 +7,7 @@ import { parseAuth } from "./parse-auth.js";
 import { parseBody } from "./parse-body.js";
 import { extractIOCs } from "./extract-iocs.js";
 import { analyzeLanguage } from "./analyze-language.js";
+import { analyzeIdentity } from "./analyze-identity.js";
 import { calculateScore } from "./score.js";
 import { sha256, sha256Bytes, md5Bytes } from "./hash-utils.js";
 import { isValidIP, isRoutableIP } from "./ip-utils.js";
@@ -349,14 +350,18 @@ async function handleAnalyze() {
       console.log("[Phishing Analyzer] Language analyzed");
     }
 
+    // Who the message claims to be from, which authentication cannot answer.
+    const identity = analyzeIdentity(headers);
+
     // Calculate score
-    const score = calculateScore(auth, iocs, languageAnalysis, headers);
+    const score = calculateScore(auth, iocs, languageAnalysis, headers, identity);
     console.log("[Phishing Analyzer] Score calculated:", score?.tier);
 
     // Store analysis
     currentAnalysis = {
       headers,
       auth,
+      identity,
       body,
       iocs,
       languageAnalysis,
@@ -667,6 +672,170 @@ function showStatus(message, type = "info") {
   if (elements.inputStatus) {
     elements.inputStatus.textContent = message;
     elements.inputStatus.className = "status-message " + type;
+  }
+}
+
+// ===== LOCAL LOOKUPS: DNS and WHOIS =====
+//
+// Both run on the machine serving the page (see lookup-local.js), so they need
+// no API key and reach no third-party service. On a hosted copy there is no
+// such server, and the panels say so instead of failing silently.
+const localResults = new Map(); // "whois:<value>" / "dns:<domain>" -> one-line summary
+const localCache = new Map();
+
+async function localLookup(path) {
+  if (localCache.has(path)) return localCache.get(path);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(path, { signal: controller.signal });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    localCache.set(path, data);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const NOT_LOCAL_NOTE =
+  "This needs the app's own server: run <code>node server.js</code> and open http://localhost:8080. DNS and WHOIS are then resolved by your machine — no third-party service, no API key.";
+
+function daysSince(value) {
+  const t = Date.parse(value);
+  return Number.isNaN(t) ? null : Math.floor((Date.now() - t) / 86400000);
+}
+
+function whoisRows(data) {
+  const rows = [];
+  const add = (label, value) => {
+    if (value && String(value).length) rows.push([label, String(value)]);
+  };
+  if (data.kind === "ip") {
+    add("Network", data.network);
+    add("Range", data.range);
+    add("Organisation", data.org);
+    add("Country", data.country);
+    add("Type", data.type);
+  } else {
+    add("Domain", data.target);
+    add("Registrar", data.registrar);
+    add("Registrant", data.registrant);
+    add("Country", data.country);
+    add("Name servers", (data.nameservers || []).slice(0, 4).join(", "));
+  }
+  add("Registered", data.registered);
+  add("Updated", data.updated);
+  add("Expires", data.expires);
+  add("Status", (data.statuses || []).slice(0, 4).join(", "));
+  add("Abuse contact", data.abuseEmail);
+  add("Source", data.source);
+  return rows;
+}
+
+async function fetchWhois(details) {
+  const body = details.querySelector(".whois-body");
+  if (!body || details.dataset.ready) return;
+  details.dataset.ready = "1";
+  const { kind, value } = details.dataset;
+
+  if (!isLocalhost) {
+    body.innerHTML = `<div class="whois-note">${NOT_LOCAL_NOTE}</div>`;
+    return;
+  }
+  body.innerHTML = '<span class="whois-loading">Looking up registration…</span>';
+
+  try {
+    const data = await localLookup(`/lookup/whois?q=${encodeURIComponent(value)}`);
+    if (data.notFound) {
+      body.innerHTML =
+        '<div class="whois-note bad">This domain is not registered. A live link to an unregistered domain is either already taken down or was never real.</div>';
+      localResults.set(`whois:${value}`, "not registered");
+      return;
+    }
+    const age = daysSince(data.registered);
+    // A domain registered days ago is the single most reliable sign of a
+    // throwaway phishing domain.
+    const ageBadge =
+      age != null
+        ? `<span class="whois-age ${age <= 30 ? "bad" : age <= 180 ? "warn" : "ok"}">${
+            age <= 1 ? "registered today" : `registered ${age} days ago`
+          }</span>`
+        : "";
+    const rows = whoisRows(data);
+    body.innerHTML = `${ageBadge}<dl class="whois-grid">${rows
+      .map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`)
+      .join("")}</dl>`;
+    localResults.set(
+      `whois:${value}`,
+      [data.registrar || data.org, data.country, age != null ? `registered ${age} days ago` : null]
+        .filter(Boolean)
+        .join(" · "),
+    );
+  } catch (e) {
+    body.innerHTML = `<div class="whois-note">Lookup failed: ${esc(e.message)}</div>`;
+    details.dataset.ready = "";
+  }
+}
+
+async function fetchDns(btn) {
+  const domain = btn.dataset.domain;
+  const box = btn.parentElement?.querySelector(".dns-body");
+  if (!box || !domain) return;
+
+  if (!isLocalhost) {
+    box.innerHTML = `<div class="whois-note">${NOT_LOCAL_NOTE}</div>`;
+    return;
+  }
+  box.innerHTML = '<span class="whois-loading">Resolving…</span>';
+  btn.disabled = true;
+
+  try {
+    const d = await localLookup(`/lookup/dns?q=${encodeURIComponent(domain)}`);
+    // What the published policy would actually do with a failing message.
+    const policy = (d.dmarcPolicy || "").toLowerCase();
+    const enforcement =
+      policy === "reject"
+        ? ["ok", "p=reject — a message that fails DMARC for this domain is refused outright."]
+        : policy === "quarantine"
+          ? ["warn", "p=quarantine — a failing message is delivered to junk, not refused."]
+          : policy === "none"
+            ? ["bad", "p=none — the domain publishes DMARC but asks for no action, so a spoof is still delivered."]
+            : ["bad", "No DMARC record — nothing stops anyone sending as this domain."];
+    const spfNote =
+      d.spfAll === "-"
+        ? ["ok", "-all — the SPF record rejects every server it does not list."]
+        : d.spfAll === "~"
+          ? ["warn", "~all — SPF only marks unlisted servers, it does not reject them."]
+          : d.spf
+            ? ["warn", `${d.spfAll || "?"}all — the SPF record makes no firm assertion.`]
+            : ["bad", "No SPF record published."];
+
+    const list = (label, values) =>
+      values && values.length
+        ? `<div class="dns-row"><span class="dns-label">${esc(label)}</span><span class="dns-value mono">${esc(values.join(", "))}</span></div>`
+        : "";
+
+    box.innerHTML = `
+      <div class="dns-verdicts">
+        <div class="dns-verdict ${spfNote[0]}">${esc(spfNote[1])}</div>
+        <div class="dns-verdict ${enforcement[0]}">${esc(enforcement[1])}</div>
+      </div>
+      ${d.spf ? `<div class="dns-row"><span class="dns-label">SPF</span><span class="dns-value mono">${esc(d.spf)}</span></div>` : ""}
+      ${d.dmarc ? `<div class="dns-row"><span class="dns-label">DMARC</span><span class="dns-value mono">${esc(d.dmarc)}</span></div>` : ""}
+      ${list("MX", d.mx)}
+      ${list("A", d.a)}
+      ${list("Name servers", d.ns)}
+      ${!d.mx?.length ? '<div class="dns-verdict warn">This domain has no MX record, so it is not set up to receive mail — unusual for a real correspondent.</div>' : ""}
+      <div class="dns-note">Resolved by this machine, with your own DNS resolver.</div>`;
+    localResults.set(
+      `dns:${domain}`,
+      [d.spf ? `SPF ${d.spfAll || "?"}all` : "no SPF", d.dmarcPolicy ? `DMARC p=${d.dmarcPolicy}` : "no DMARC", d.mx?.length ? `${d.mx.length} MX` : "no MX"].join(" · "),
+    );
+  } catch (e) {
+    box.innerHTML = `<div class="whois-note">Lookup failed: ${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -1270,6 +1439,7 @@ const ACTIONS = {
   "show-all": (btn) => showAllIOCs(btn.dataset.section),
   decode: (btn) => runDecoder(btn, btn.dataset.decoder),
   settings: () => promptSettings(),
+  dns: (btn) => fetchDns(btn),
   // A vendor page is opened in a new tab with no opener reference.
   vendor: (btn) => window.open(btn.dataset.href, "_blank", "noopener,noreferrer"),
 };
@@ -1288,6 +1458,7 @@ document.addEventListener(
   "toggle",
   (e) => {
     if (e.target.classList?.contains("url-decode")) renderDecoders(e.target);
+    if (e.target.classList?.contains("whois-panel") && e.target.open) fetchWhois(e.target);
   },
   true,
 );

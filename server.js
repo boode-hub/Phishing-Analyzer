@@ -6,6 +6,7 @@
 // to bypass CORS restrictions when running locally.
 
 const http = require("http");
+const { validTarget, dnsRecords, reverseDns, whoisLookup } = require("./lookup-local");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
@@ -71,6 +72,39 @@ const server = http.createServer((req, res) => {
       "Access-Control-Allow-Headers": "Content-Type, x-apikey, Key",
     });
     res.end();
+    return;
+  }
+
+  // ===== LOCAL LOOKUPS: DNS and WHOIS/RDAP =====
+  //
+  // Done by this machine with this machine's resolver, so no third-party API
+  // and no key is involved. The target is validated as a bare domain or IP
+  // before it reaches a resolver or a WHOIS server.
+  if (req.url.startsWith("/lookup/dns") || req.url.startsWith("/lookup/whois")) {
+    const query = new URL(req.url, "http://localhost").searchParams;
+    const target = validTarget(query.get("q"));
+    const json = (status, body) => {
+      res.writeHead(status, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      });
+      res.end(JSON.stringify(body));
+    };
+    if (!target) {
+      json(400, { error: "Ask for a single domain name or IP address." });
+      return;
+    }
+    const wantsDns = req.url.startsWith("/lookup/dns");
+    console.log("[Local]", wantsDns ? "DNS" : "WHOIS", "->", target.value);
+    const work = wantsDns
+      ? target.kind === "ip"
+        ? reverseDns(target.value)
+        : dnsRecords(target.value)
+      : whoisLookup(target.kind, target.value);
+    work.then(
+      (data) => json(200, data),
+      (err) => json(502, { error: String(err.message || err) }),
+    );
     return;
   }
 

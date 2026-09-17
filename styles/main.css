@@ -2807,3 +2807,228 @@ mark.highlight-credential {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ===== SENDER IDENTITY (display-name and lookalike findings) ===== */
+.identity-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-base);
+  padding: 0.875rem 1rem;
+  margin-bottom: 1rem;
+}
+.identity-card .card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.625rem;
+}
+.identity-card h3 {
+  font-size: 13px;
+  margin: 0;
+}
+.identity-count {
+  margin-left: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 7px;
+  border-radius: var(--radius-full);
+  border: 1px solid;
+}
+.identity-count.high { color: var(--red); background: var(--red-bg); border-color: var(--red-border); }
+.identity-count.medium { color: var(--yellow); background: var(--yellow-bg); border-color: var(--yellow-border); }
+.identity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.identity-item {
+  display: grid;
+  gap: 0.15rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--border);
+}
+.identity-item.high { border-left-color: var(--red); }
+.identity-item.medium { border-left-color: var(--yellow); }
+.identity-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.identity-detail {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* ===== WHOIS / registration panels ===== */
+.whois-panel {
+  margin-top: 0.5rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-deep);
+}
+.whois-panel > summary {
+  cursor: pointer;
+  padding: 0.35rem 0.625rem;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  word-break: normal;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+}
+.whois-panel[open] > summary {
+  border-bottom: 1px solid var(--border-light);
+  color: var(--accent);
+}
+.whois-body {
+  padding: 0.625rem;
+  font-size: 12px;
+}
+.whois-loading {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.whois-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+}
+.whois-grid dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.whois-grid dd {
+  margin: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.whois-age {
+  display: inline-block;
+  margin-bottom: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 700;
+}
+.whois-age.bad { color: var(--red); background: var(--red-bg); border-color: var(--red-border); }
+.whois-age.warn { color: var(--yellow); background: var(--yellow-bg); border-color: var(--yellow-border); }
+.whois-age.ok { color: var(--green); background: var(--green-bg); border-color: var(--green-border); }
+.whois-note {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.whois-note.bad {
+  color: var(--red);
+}
+.whois-note code {
+  font-family: "JetBrains Mono", monospace;
+  background: var(--bg-elevated);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ===== LIVE DNS ===== */
+.dim-note {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 0.5rem;
+}
+.dns-body {
+  margin-top: 0.625rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.dns-verdicts {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+.dns-verdict {
+  font-size: 12px;
+  padding: 0.4rem 0.625rem;
+  border-radius: var(--radius-md);
+  border: 1px solid;
+}
+.dns-verdict.ok { color: var(--green); background: var(--green-bg); border-color: var(--green-border); }
+.dns-verdict.warn { color: var(--yellow); background: var(--yellow-bg); border-color: var(--yellow-border); }
+.dns-verdict.bad { color: var(--red); background: var(--red-bg); border-color: var(--red-border); }
+.dns-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 0.5rem;
+  font-size: 12px;
+}
+.dns-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.dns-value {
+  overflow-wrap: anywhere;
+}
+.dns-note {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ===== ARC and header anomalies ===== */
+.arc-box {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--blue);
+  border-radius: var(--radius-md);
+  padding: 0.625rem 0.75rem;
+  font-size: 12px;
+  display: grid;
+  gap: 0.35rem;
+}
+.arc-box.bad {
+  border-left-color: var(--red);
+}
+.arc-note {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.anomaly-list {
+  display: grid;
+  gap: 0.35rem;
+}
+.anomaly {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.anomaly-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 0.3rem;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+.anomaly.medium .anomaly-dot { background: var(--yellow); }
+.anomaly.high .anomaly-dot { background: var(--red); }
+
+@media (max-width: 768px) {
+  .whois-grid,
+  .dns-row {
+    grid-template-columns: 1fr;
+  }
+  .whois-panel > summary {
+    min-height: 40px;
+  }
+}
