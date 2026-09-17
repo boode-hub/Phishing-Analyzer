@@ -217,6 +217,43 @@ test("identity findings raise the authentication score and are explained", () =>
   assert.ok(score.reasons.some((r) => /imitates paypal/i.test(r)), score.reasons.join(" | "));
 });
 
+// ===== lookup buttons =====
+
+test("with no API key the lookup control is a real link, not a scripted popup", async () => {
+  const { renderIOCs } = await import("../scripts/render.js");
+  const container = { innerHTML: "" };
+  renderIOCs(
+    container,
+    {
+      urls: [],
+      domains: [{ value: "evil.test", source: "URL", riskFlags: [], risks: [] }],
+      ips: [{ value: "198.51.100.5", source: "Received", riskFlags: [], risks: [] }],
+      emails: [],
+      attachments: [],
+    },
+    {}, // no keys saved
+  );
+  // window.open is blocked by default in many browsers, so clicking a button
+  // that called it did nothing at all. An anchor always opens.
+  assert.ok(!/data-act="vendor"/.test(container.innerHTML), "no-key lookups must not be scripted");
+  assert.match(container.innerHTML, /<a class="btn-ioc-lookup btn-vt no-key" href="https:\/\/www\.virustotal\.com\/gui\/domain\/evil\.test"[^>]*target="_blank"/);
+  assert.match(container.innerHTML, /<a class="btn-ioc-lookup btn-abuse no-key" href="https:\/\/www\.abuseipdb\.com\/check\/198\.51\.100\.5"/);
+  assert.match(container.innerHTML, /rel="noopener noreferrer"/);
+});
+
+test("with keys saved the lookup stays an in-page button", async () => {
+  const { renderIOCs } = await import("../scripts/render.js");
+  const container = { innerHTML: "" };
+  renderIOCs(
+    container,
+    { urls: [], domains: [], ips: [{ value: "198.51.100.5", source: "Received", riskFlags: [], risks: [] }], emails: [], attachments: [] },
+    { virustotal: "k", abuseipdb: "k" },
+  );
+  assert.match(container.innerHTML, /data-act="vt"/);
+  assert.match(container.innerHTML, /data-act="abuse"/);
+  assert.ok(!/no-key/.test(container.innerHTML));
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 for (const f of failures) console.error(`  FAIL  ${f.name}\n        ${f.message}`);
 process.exit(failures.length ? 1 : 0);

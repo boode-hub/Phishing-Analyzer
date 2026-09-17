@@ -1552,8 +1552,6 @@ const ACTIONS = {
   dns: (btn) => fetchDns(btn),
   "copy-iocs": (btn) => copyAllIOCs(btn),
   "open-batch": (btn) => openBatchItem(btn.dataset.index),
-  // A vendor page is opened in a new tab with no opener reference.
-  vendor: (btn) => window.open(btn.dataset.href, "_blank", "noopener,noreferrer"),
 };
 
 document.addEventListener("click", (e) => {

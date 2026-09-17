@@ -3106,3 +3106,13 @@ mark.highlight-credential {
     color: var(--text-muted);
   }
 }
+
+
+/* A lookup with no API key is a real link, not a button calling window.open —
+   browsers block that, and the click silently did nothing. */
+a.btn-ioc-lookup {
+  text-decoration: none;
+}
+a.btn-ioc-lookup:hover {
+  text-decoration: none;
+}

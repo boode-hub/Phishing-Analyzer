@@ -231,10 +231,10 @@ function ipLookupButtons(ip, apiKeys) {
 
   const vt = apiKeys?.virustotal
     ? `<button class="btn-ioc-lookup btn-vt" data-value="${esc(ip)}" data-type="ip" data-act="vt" title="Check this IP on VirusTotal">VT</button>`
-    : `<button class="btn-ioc-lookup btn-vt no-key" data-act="vendor" data-href="${esc(vendorUrl("vt", "ip", ip))}" title="No API key saved — open this IP on the VirusTotal website">VT ↗</button>`;
+    : `<a class="btn-ioc-lookup btn-vt no-key" href="${esc(vendorUrl("vt", "ip", ip))}" target="_blank" rel="noopener noreferrer" title="No API key saved — open this IP on the VirusTotal website">VT ↗</a>`;
   const abuse = apiKeys?.abuseipdb
     ? `<button class="btn-ioc-lookup btn-abuse" data-value="${esc(ip)}" data-act="abuse" title="Check this IP on AbuseIPDB">AbuseIPDB</button>`
-    : `<button class="btn-ioc-lookup btn-abuse no-key" data-act="vendor" data-href="${esc(vendorUrl("abuse", "ip", ip))}" title="No API key saved — open this IP on the AbuseIPDB website">AbuseIPDB ↗</button>`;
+    : `<a class="btn-ioc-lookup btn-abuse no-key" href="${esc(vendorUrl("abuse", "ip", ip))}" target="_blank" rel="noopener noreferrer" title="No API key saved — open this IP on the AbuseIPDB website">AbuseIPDB ↗</a>`;
   const copy = `<button class="btn-sm" data-act="copy-text" data-text="${esc(ip)}" title="Copy">Copy</button>`;
   return `<span class="ip-actions">${copy}${vt}${abuse}</span>`;
 }
@@ -769,10 +769,10 @@ function renderIOCSection(id, title, items, type, apiKeys, showAll) {
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             VT
           </button>`
-        : `<button class="btn-ioc-lookup btn-vt no-key" data-act="vendor" data-href="${esc(vendorUrl("vt", type, value, item.sha256))}" title="No API key saved — open this indicator on the VirusTotal website">
+        : `<a class="btn-ioc-lookup btn-vt no-key" href="${esc(vendorUrl("vt", type, value, item.sha256))}" target="_blank" rel="noopener noreferrer" title="No API key saved — open this indicator on the VirusTotal website">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            VT
-          </button>`;
+            VT ↗
+          </a>`;
 
       let abuseBtn = "";
       if (type === "ip" && !lookupUseless) {
@@ -781,10 +781,10 @@ function renderIOCSection(id, title, items, type, apiKeys, showAll) {
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               AbuseIPDB
             </button>`
-          : `<button class="btn-ioc-lookup btn-abuse no-key" data-act="vendor" data-href="${esc(vendorUrl("abuse", "ip", value))}" title="No API key saved — open this IP on the AbuseIPDB website">
+          : `<a class="btn-ioc-lookup btn-abuse no-key" href="${esc(vendorUrl("abuse", "ip", value))}" target="_blank" rel="noopener noreferrer" title="No API key saved — open this IP on the AbuseIPDB website">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-              AbuseIPDB
-            </button>`;
+              AbuseIPDB ↗
+            </a>`;
       }
 
       // For email addresses, add a VT domain lookup button
@@ -797,10 +797,10 @@ function renderIOCSection(id, title, items, type, apiKeys, showAll) {
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 VT Domain
               </button>`
-            : `<button class="btn-ioc-lookup btn-vt no-key" data-act="vendor" data-href="${esc(vendorUrl("vt", "domain", domain))}" title="No API key saved — open this domain on the VirusTotal website">
+            : `<a class="btn-ioc-lookup btn-vt no-key" href="${esc(vendorUrl("vt", "domain", domain))}" target="_blank" rel="noopener noreferrer" title="No API key saved — open this domain on the VirusTotal website">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                VT Domain
-              </button>`;
+                VT Domain ↗
+              </a>`;
         }
       }
 
