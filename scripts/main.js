@@ -142,6 +142,7 @@ function queryElements() {
     exportStatus: "export-status",
     apiAvailability: "api-availability",
     proxyField: "proxy-field",
+    rememberKeys: "remember-keys",
     accentColor: "accent-color",
     accentValue: "accent-value",
     resetAccent: "reset-accent",
@@ -169,6 +170,7 @@ function init() {
   if (elements.corsProxyUrlInput) {
     elements.corsProxyUrlInput.value = apiKeys.corsProxyUrl;
   }
+  if (elements.rememberKeys) elements.rememberKeys.checked = rememberKeys();
 
   // Event Listeners
   if (elements.analyzeBtn) {
@@ -543,6 +545,21 @@ function setupThemePicker() {
   });
 }
 
+/**
+ * Whether API keys may be written to this browser's storage.
+ *
+ * A key in localStorage outlives the tab, syncs between devices on some
+ * browsers, and is readable by anything that ever manages to run script on this
+ * origin. Analysts on a shared machine should be able to say no.
+ */
+function rememberKeys() {
+  try {
+    return localStorage.getItem("remember-keys") !== "0";
+  } catch {
+    return false;
+  }
+}
+
 // Handle Save Settings
 function handleSaveSettings() {
   apiKeys.virustotal = elements.virustotalKeyInput
@@ -555,24 +572,17 @@ function handleSaveSettings() {
     ? elements.corsProxyUrlInput.value.trim()
     : "";
 
+  const remember = elements.rememberKeys ? elements.rememberKeys.checked : true;
   try {
-    if (apiKeys.virustotal) {
-      localStorage.setItem("vt-api-key", apiKeys.virustotal);
-    } else {
-      localStorage.removeItem("vt-api-key");
-    }
-
-    if (apiKeys.abuseipdb) {
-      localStorage.setItem("abuseipdb-api-key", apiKeys.abuseipdb);
-    } else {
-      localStorage.removeItem("abuseipdb-api-key");
-    }
-
-    if (apiKeys.corsProxyUrl) {
-      localStorage.setItem("cors-proxy-url", apiKeys.corsProxyUrl);
-    } else {
-      localStorage.removeItem("cors-proxy-url");
-    }
+    localStorage.setItem("remember-keys", remember ? "1" : "0");
+    // The keys stay in memory for this tab either way; only storage differs.
+    const store = (name, value) => {
+      if (remember && value) localStorage.setItem(name, value);
+      else localStorage.removeItem(name);
+    };
+    store("vt-api-key", apiKeys.virustotal);
+    store("abuseipdb-api-key", apiKeys.abuseipdb);
+    store("cors-proxy-url", apiKeys.corsProxyUrl);
   } catch (e) {
     console.warn("localStorage not available:", e);
   }
@@ -580,7 +590,12 @@ function handleSaveSettings() {
   if (elements.settingsModal) {
     elements.settingsModal.classList.add("hidden");
   }
-  showStatus("Settings saved!", "success");
+  showStatus(
+    remember
+      ? "Settings saved!"
+      : "Settings saved for this tab only — nothing was written to browser storage.",
+    "success",
+  );
 }
 
 // Handle Clear Keys
@@ -940,7 +955,7 @@ async function lookupVirusTotal(btn) {
         ${attrs.as_owner ? `<div class="lookup-meta">AS Owner: ${esc(attrs.as_owner)}</div>` : ""}
         ${attrs.country ? `<div class="lookup-meta">Country: ${esc(attrs.country)}</div>` : ""}
         ${attrs.meaningful_name ? `<div class="lookup-meta">Name: ${esc(attrs.meaningful_name)}</div>` : ""}
-        ${analysePath ? `<div class="lookup-actions"><button class="btn-rescan" data-url="${esc(value)}" onclick="rescanVT('${esc(analysePath)}', this)" title="Force fresh analysis on VirusTotal">
+        ${analysePath ? `<div class="lookup-actions"><button class="btn-rescan" data-url="${esc(value)}" data-act="rescan" data-path="${esc(analysePath)}" title="Force fresh analysis on VirusTotal">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           Rescan
         </button>
@@ -1238,17 +1253,44 @@ async function rescanVT(analysePath, btn) {
   }
 }
 
-// Expose functions globally for inline onclick handlers
-window.lookupVirusTotal = lookupVirusTotal;
-window.lookupAbuseIPDB = lookupAbuseIPDB;
-window.copyIOC = copyIOC;
-window.toggleDefang = toggleDefang;
-window.promptSettings = promptSettings;
-window.rescanVT = rescanVT;
-window.showAllIOCs = showAllIOCs;
-window.renderDecoders = renderDecoders;
-window.runDecoder = runDecoder;
-window.copyText = copyText;
+// One delegated listener for every result button.
+//
+// Results are built as HTML strings, and inline onclick handlers meant the page
+// could never run under a strict Content-Security-Policy — one escaping mistake
+// in a value taken from the email would have been code execution. Buttons now
+// carry data-act and nothing is exposed on window.
+const ACTIONS = {
+  vt: (btn) => lookupVirusTotal(btn),
+  abuse: (btn) => lookupAbuseIPDB(btn),
+  rescan: (btn) => rescanVT(btn.dataset.path, btn),
+  "copy-ioc": (btn) => copyIOC(btn),
+  defang: (btn) => toggleDefang(btn),
+  "copy-text": (btn) => copyText(btn.dataset.text || "", btn),
+  "copy-prev": (btn) => copyText(btn.previousElementSibling?.textContent || "", btn),
+  "show-all": (btn) => showAllIOCs(btn.dataset.section),
+  decode: (btn) => runDecoder(btn, btn.dataset.decoder),
+  settings: () => promptSettings(),
+  // A vendor page is opened in a new tab with no opener reference.
+  vendor: (btn) => window.open(btn.dataset.href, "_blank", "noopener,noreferrer"),
+};
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest?.("[data-act]");
+  if (!btn) return;
+  const run = ACTIONS[btn.dataset.act];
+  if (!run) return;
+  e.preventDefault();
+  run(btn);
+});
+
+// "toggle" does not bubble, so the decoder panels are caught in the capture phase.
+document.addEventListener(
+  "toggle",
+  (e) => {
+    if (e.target.classList?.contains("url-decode")) renderDecoders(e.target);
+  },
+  true,
+);
 
 // Prompt user to open settings (for disabled lookup buttons)
 function promptSettings() {

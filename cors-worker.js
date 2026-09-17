@@ -9,7 +9,17 @@
 // 5. Copy the worker URL (e.g., https://your-worker.your-subdomain.workers.dev)
 // 6. In the Phishing Analyzer app settings, paste the worker URL in the "CORS Proxy URL" field
 //
-// This worker forwards all headers (including API keys) to the target API.
+// This worker forwards all headers (including API keys) to the target API,
+// but ONLY to the two reputation services below. Without that allow-list it is
+// an open proxy: anyone who learns the worker URL can route arbitrary traffic
+// through your Cloudflare account, with their own headers attached.
+
+// Only these hosts may be reached through the worker.
+const ALLOWED_HOSTS = new Set([
+  "www.virustotal.com",
+  "virustotal.com",
+  "api.abuseipdb.com",
+]);
 
 export default {
   async fetch(request, env) {
@@ -36,6 +46,25 @@ export default {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         },
+      );
+    }
+
+    // Refuse anything that is not one of the two reputation APIs.
+    let target;
+    try {
+      target = new URL(targetUrl);
+    } catch {
+      return new Response(JSON.stringify({ error: "Malformed 'url' parameter" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (target.protocol !== "https:" || !ALLOWED_HOSTS.has(target.hostname)) {
+      return new Response(
+        JSON.stringify({
+          error: "This relay only forwards to VirusTotal and AbuseIPDB over HTTPS",
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 

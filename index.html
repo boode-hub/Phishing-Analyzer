@@ -10,12 +10,16 @@
     <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
+    <!-- Nothing loads from a third party: the fonts ship with the app, and the
+         policy below bans remote script, frames, objects and form posts, so an
+         escaping mistake anywhere in the app cannot become code execution.
+         connect-src stays open because lookups go to whatever relay the user
+         configured; every other fetch target is same-origin. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src *; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
+    <link rel="stylesheet" href="styles/fonts.css" />
     <link rel="stylesheet" href="styles/main.css" />
   </head>
   <body>
@@ -206,6 +210,17 @@
                 placeholder="Enter your AbuseIPDB API key"
               />
               <small>Used for IP address reputation lookups</small>
+            </div>
+
+            <div class="setting-field">
+              <label class="setting-check">
+                <input type="checkbox" id="remember-keys" checked />
+                <span>Remember my keys in this browser</span>
+              </label>
+              <small>
+                Unchecked, the keys stay in memory only and are gone when you
+                close the tab — nothing is written to this browser's storage.
+              </small>
             </div>
 
             <div class="setting-field" id="proxy-field">

@@ -1157,6 +1157,15 @@ input[type="file"]::file-selector-button:hover {
   opacity: 0.7;
 }
 
+/* No API key saved: the button still works, it just opens the vendor's site. */
+.btn-ioc-lookup.no-key {
+  opacity: 0.65;
+  border-style: dashed;
+}
+.btn-ioc-lookup.no-key:hover {
+  opacity: 1;
+}
+
 /* Old button styles (kept for compatibility) */
 .btn-lookup {
   padding: 0.25rem 0.625rem;
@@ -1725,6 +1734,19 @@ mark.highlight-credential {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.setting-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.setting-check input {
+  width: auto;
+  accent-color: var(--accent);
 }
 .setting-field small {
   display: block;

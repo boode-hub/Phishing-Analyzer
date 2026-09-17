@@ -23,6 +23,7 @@ const MIME_TYPES = {
   ".txt": "text/plain",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".woff2": "font/woff2",
   ".ico": "image/x-icon",
 };
 
@@ -218,7 +219,9 @@ server.on("error", (err) => {
   throw err;
 });
 
-server.listen(PORT, () => {
+// Loopback only. Binding every interface published the analyzer — and its API
+// relay — to everyone on the same network.
+server.listen(PORT, "127.0.0.1", () => {
   console.log(`Server running at http://localhost:${PORT}/`);
   console.log("Press Ctrl+C to stop");
 });

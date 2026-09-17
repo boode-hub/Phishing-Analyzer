@@ -220,16 +220,16 @@ export async function renderSummary(container, analysis, apiKeys) {
 function ipLookupButtons(ip, apiKeys) {
   if (!isValidIP(ip)) return "";
   if (!isRoutableIP(ip)) {
-    return `<span class="ip-actions"><button class="btn-sm" onclick="copyText('${esc(ip)}', this)" title="Copy">Copy</button><span class="ip-note">private/reserved — not published in reputation data</span></span>`;
+    return `<span class="ip-actions"><button class="btn-sm" data-act="copy-text" data-text="${esc(ip)}" title="Copy">Copy</button><span class="ip-note">private/reserved — not published in reputation data</span></span>`;
   }
 
   const vt = apiKeys?.virustotal
-    ? `<button class="btn-ioc-lookup btn-vt" data-value="${esc(ip)}" data-type="ip" onclick="lookupVirusTotal(this)" title="Check this IP on VirusTotal">VT</button>`
-    : `<button class="btn-ioc-lookup btn-vt disabled" onclick="promptSettings()" title="Add a VirusTotal API key in Settings">VT</button>`;
+    ? `<button class="btn-ioc-lookup btn-vt" data-value="${esc(ip)}" data-type="ip" data-act="vt" title="Check this IP on VirusTotal">VT</button>`
+    : `<button class="btn-ioc-lookup btn-vt no-key" data-act="vendor" data-href="${esc(vendorUrl("vt", "ip", ip))}" title="No API key saved — open this IP on the VirusTotal website">VT ↗</button>`;
   const abuse = apiKeys?.abuseipdb
-    ? `<button class="btn-ioc-lookup btn-abuse" data-value="${esc(ip)}" onclick="lookupAbuseIPDB(this)" title="Check this IP on AbuseIPDB">AbuseIPDB</button>`
-    : `<button class="btn-ioc-lookup btn-abuse disabled" onclick="promptSettings()" title="Add an AbuseIPDB API key in Settings">AbuseIPDB</button>`;
-  const copy = `<button class="btn-sm" onclick="copyText('${esc(ip)}', this)" title="Copy">Copy</button>`;
+    ? `<button class="btn-ioc-lookup btn-abuse" data-value="${esc(ip)}" data-act="abuse" title="Check this IP on AbuseIPDB">AbuseIPDB</button>`
+    : `<button class="btn-ioc-lookup btn-abuse no-key" data-act="vendor" data-href="${esc(vendorUrl("abuse", "ip", ip))}" title="No API key saved — open this IP on the AbuseIPDB website">AbuseIPDB ↗</button>`;
+  const copy = `<button class="btn-sm" data-act="copy-text" data-text="${esc(ip)}" title="Copy">Copy</button>`;
   return `<span class="ip-actions">${copy}${vt}${abuse}</span>`;
 }
 
@@ -602,7 +602,7 @@ export function renderDecoders(details) {
   const found = detectEncodings(details.dataset.url);
   const buttons = URL_DECODERS.map(
     (d) =>
-      `<button type="button" class="decode-btn${d.id === "all" || found.includes(d.id) ? " applies" : ""}" onclick="runDecoder(this, '${d.id}')">${esc(d.label)}</button>`,
+      `<button type="button" class="decode-btn${d.id === "all" || found.includes(d.id) ? " applies" : ""}" data-act="decode" data-decoder="${d.id}">${esc(d.label)}</button>`,
   ).join("");
   body.innerHTML = `<div class="decode-buttons">${buttons}</div><div class="decode-result" hidden></div>`;
 }
@@ -624,7 +624,7 @@ export function runDecoder(btn, id) {
     result.innerHTML = `<div class="decode-empty">${esc(decoder.label)}: nothing to decode in this URL.</div>`;
     return;
   }
-  result.innerHTML = `${r.note ? `<div class="decode-note">${esc(r.note)}</div>` : ""}<pre class="decode-output mono">${esc(r.output)}</pre><button type="button" class="btn-sm" onclick="copyText(this.previousElementSibling.textContent, this)">Copy</button>`;
+  result.innerHTML = `${r.note ? `<div class="decode-note">${esc(r.note)}</div>` : ""}<pre class="decode-output mono">${esc(r.output)}</pre><button type="button" class="btn-sm" data-act="copy-prev">Copy</button>`;
 }
 
 /** Re-render one IOC section with every row shown. Wired to window in main.js. */
@@ -688,11 +688,11 @@ function renderIOCSection(id, title, items, type, apiKeys, showAll) {
       const vtBtn = lookupUseless
         ? ""
         : hasVtKey
-        ? `<button class="btn-ioc-lookup btn-vt" data-value="${esc(value)}" data-type="${type}"${shaAttr} onclick="lookupVirusTotal(this)" title="Check VirusTotal">
+        ? `<button class="btn-ioc-lookup btn-vt" data-value="${esc(value)}" data-type="${type}"${shaAttr} data-act="vt" title="Check VirusTotal">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             VT
           </button>`
-        : `<button class="btn-ioc-lookup btn-vt disabled" onclick="promptSettings()" title="Add VirusTotal API key in Settings">
+        : `<button class="btn-ioc-lookup btn-vt no-key" data-act="vendor" data-href="${esc(vendorUrl("vt", type, value, item.sha256))}" title="No API key saved — open this indicator on the VirusTotal website">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             VT
           </button>`;
@@ -700,11 +700,11 @@ function renderIOCSection(id, title, items, type, apiKeys, showAll) {
       let abuseBtn = "";
       if (type === "ip" && !lookupUseless) {
         abuseBtn = hasAbuseKey
-          ? `<button class="btn-ioc-lookup btn-abuse" data-value="${esc(value)}" onclick="lookupAbuseIPDB(this)" title="Check AbuseIPDB">
+          ? `<button class="btn-ioc-lookup btn-abuse" data-value="${esc(value)}" data-act="abuse" title="Check AbuseIPDB">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               AbuseIPDB
             </button>`
-          : `<button class="btn-ioc-lookup btn-abuse disabled" onclick="promptSettings()" title="Add AbuseIPDB API key in Settings">
+          : `<button class="btn-ioc-lookup btn-abuse no-key" data-act="vendor" data-href="${esc(vendorUrl("abuse", "ip", value))}" title="No API key saved — open this IP on the AbuseIPDB website">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               AbuseIPDB
             </button>`;
@@ -716,11 +716,11 @@ function renderIOCSection(id, title, items, type, apiKeys, showAll) {
         const domain = value.split("@")[1];
         if (domain) {
           emailDomainBtn = hasVtKey
-            ? `<button class="btn-ioc-lookup btn-vt" data-value="${esc(domain)}" data-type="domain" onclick="lookupVirusTotal(this)" title="Check domain on VirusTotal">
+            ? `<button class="btn-ioc-lookup btn-vt" data-value="${esc(domain)}" data-type="domain" data-act="vt" title="Check domain on VirusTotal">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 VT Domain
               </button>`
-            : `<button class="btn-ioc-lookup btn-vt disabled" onclick="promptSettings()" title="Add VirusTotal API key in Settings">
+            : `<button class="btn-ioc-lookup btn-vt no-key" data-act="vendor" data-href="${esc(vendorUrl("vt", "domain", domain))}" title="No API key saved — open this domain on the VirusTotal website">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 VT Domain
               </button>`;
@@ -735,19 +735,19 @@ function renderIOCSection(id, title, items, type, apiKeys, showAll) {
         const labels = URL_DECODERS.filter((d) => found.includes(d.id)).map(
           (d) => d.label,
         );
-        decodeHtml = `<details class="url-decode${found.length ? " has-encoding" : ""}" data-url="${esc(value)}" ontoggle="renderDecoders(this)"><summary>Decode URL${
+        decodeHtml = `<details class="url-decode${found.length ? " has-encoding" : ""}" data-url="${esc(value)}"><summary>Decode URL${
           found.length
             ? `<span class="decode-hint">encoded: ${esc(labels.join(", "))}</span>`
             : ""
         }</summary><div class="decode-body"></div></details>`;
       }
 
-      return `<tr class="ioc-row"><td class="ioc-value-cell"><span class="ioc-original mono">${esc(value)}</span><span class="ioc-defanged mono hidden">${esc(defanged)}</span>${hashHtml}${decodeHtml}</td><td class="ioc-risk-cell">${riskHtml}</td><td class="ioc-actions"><button class="btn-sm" onclick="copyIOC(this)" title="Copy">Copy</button><button class="btn-sm" onclick="toggleDefang(this)" title="Defang">Defang</button><div class="ioc-lookup-btns">${vtBtn}${emailDomainBtn}${abuseBtn}</div></td></tr><tr class="lookup-result-row hidden" data-ioc-value="${esc(value)}"><td colspan="3" class="lookup-result-cell"><div class="lookup-result-content"></div></td></tr>`;
+      return `<tr class="ioc-row"><td class="ioc-value-cell"><span class="ioc-original mono">${esc(value)}</span><span class="ioc-defanged mono hidden">${esc(defanged)}</span>${hashHtml}${decodeHtml}</td><td class="ioc-risk-cell">${riskHtml}</td><td class="ioc-actions"><button class="btn-sm" data-act="copy-ioc" title="Copy">Copy</button><button class="btn-sm" data-act="defang" title="Defang">Defang</button><div class="ioc-lookup-btns">${vtBtn}${emailDomainBtn}${abuseBtn}</div></td></tr><tr class="lookup-result-row hidden" data-ioc-value="${esc(value)}"><td colspan="3" class="lookup-result-cell"><div class="lookup-result-content"></div></td></tr>`;
     })
     .join("");
 
   const more = hiddenCount
-    ? `<div class="ioc-more"><button class="btn-sm" onclick="showAllIOCs('${id}')">Show all ${items.length}</button><span class="ioc-more-note">${hiddenCount} more not shown</span></div>`
+    ? `<div class="ioc-more"><button class="btn-sm" data-act="show-all" data-section="${id}">Show all ${items.length}</button><span class="ioc-more-note">${hiddenCount} more not shown</span></div>`
     : "";
 
   return `<div class="ioc-section" id="${id}"><h3>${esc(title)} (${items.length})</h3><div class="table-scroll"><table class="ioc-table"><thead><tr><th>Value</th><th>Risk</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>${more}</div>`;
@@ -770,6 +770,23 @@ function renderMismatchedLinks(links) {
 
 function defang(value) {
   return value.replace(/http/gi, "hxxp").replace(/\./g, "[.]");
+}
+
+/**
+ * The vendor's own web page for an indicator. Used for the buttons shown when
+ * no API key is saved: the analyst still gets to the reputation data, just on
+ * the vendor's site instead of inside this page.
+ */
+export function vendorUrl(service, type, value, sha256) {
+  const v = encodeURIComponent(value);
+  if (service === "abuse") return `https://www.abuseipdb.com/check/${v}`;
+  if (type === "ip") return `https://www.virustotal.com/gui/ip-address/${v}`;
+  if (type === "domain") return `https://www.virustotal.com/gui/domain/${v}`;
+  if (type === "attachment")
+    return sha256
+      ? `https://www.virustotal.com/gui/file/${encodeURIComponent(sha256)}`
+      : `https://www.virustotal.com/gui/search/${v}`;
+  return `https://www.virustotal.com/gui/search/${v}`;
 }
 
 function formatSize(bytes) {
@@ -996,5 +1013,6 @@ function esc(s) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
