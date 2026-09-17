@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-5 -5 110 110">
+  <defs>
+    <g id="eye">
+      <circle cx="50" cy="50" r="48" fill="#000"/>
+      <circle cx="50" cy="50" r="46.5" fill="none" stroke="#9fef00" stroke-width="2.5"/>
+      <g id="t" fill="#9fef00">
+        <path d="M50 12A38 38 0 0 1 81 28Q69 22 50 26Z"/>
+        <circle cx="50" cy="19" r="7"/>
+      </g>
+      <use href="#t" transform="rotate(120 50 50)"/>
+      <use href="#t" transform="rotate(240 50 50)"/>
+      <circle cx="50" cy="50" r="8" fill="#9fef00"/>
+    </g>
+    <clipPath id="s1"><rect x="-10" y="22" width="120" height="7"/></clipPath>
+    <clipPath id="s2"><rect x="-10" y="47" width="120" height="5"/></clipPath>
+    <clipPath id="s3"><rect x="-10" y="70" width="120" height="6"/></clipPath>
+  </defs>
+  <!-- The whole eye, then three horizontal slices of it shifted sideways. -->
+  <use href="#eye"/>
+  <g clip-path="url(#s1)"><use href="#eye" x="7"/></g>
+  <g clip-path="url(#s2)"><use href="#eye" x="-6"/></g>
+  <g clip-path="url(#s3)"><use href="#eye" x="5"/></g>
+</svg>

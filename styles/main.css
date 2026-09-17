@@ -170,11 +170,11 @@ body {
   align-items: center;
   gap: 0.5rem;
 }
-.app-header h1::before {
-  content: ">";
-  font-family: "JetBrains Mono", "Roboto Mono", monospace;
-  font-weight: 400;
-  opacity: 0.5;
+/* The logo takes the place of the old ">" prompt mark. */
+.app-logo {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
 }
 
 /* ===== PANELS ===== */

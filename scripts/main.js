@@ -133,6 +133,7 @@ function queryElements() {
 
 // Initialize
 function init() {
+  console.log("%cBOoDe", "color:#9fef00;font:700 14px monospace");
   console.log("[Phishing Analyzer] Initializing...");
 
   // Query DOM elements now that DOM is ready

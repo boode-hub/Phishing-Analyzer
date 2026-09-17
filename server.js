@@ -22,6 +22,7 @@ const MIME_TYPES = {
   ".eml": "message/rfc822",
   ".txt": "text/plain",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
   ".ico": "image/x-icon",
 };
 
