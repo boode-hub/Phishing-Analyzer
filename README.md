@@ -1,177 +1,464 @@
 # Phishing Email Analyzer
 
-A fully client-side web application that analyzes suspicious emails for phishing indicators. All parsing, scoring, and analysis happens locally in your browser — your email data never leaves your machine unless you explicitly choose to look up an IOC with your own API key.
+A browser-based analyzer for suspicious emails. Paste the raw message or upload an `.eml` file, and it checks the sender's authentication, traces the route the message took, extracts and decodes every indicator of compromise, reads the wording for fraud patterns, and gives a scored verdict with the reasons behind it — then exports a defanged report.
+
+All analysis runs locally in your browser. Nothing is uploaded; the only data that ever leaves your machine is an indicator you explicitly send to VirusTotal or AbuseIPDB with your own API key.
 
 **Live: https://boode-hub.github.io/Phishing-Analyzer/**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Status](https://img.shields.io/badge/status-active-green.svg)
 
-## Features
+---
 
-- **Header Analysis** — Parses email headers, extracts authentication results (SPF/DKIM/DMARC), and detects domain alignment issues
-- **Body Analysis** — Extracts plain text and HTML content, and flags deceptive links — link text that shows one address while pointing to another
-- **IOC Extraction** — Finds URLs (including tracking pixels and other remote resources), domains, IP addresses, email addresses, and attachments with risk flagging. Links rewritten by Microsoft Safe Links or Proofpoint are unwrapped, and the real destination is analysed as an IOC of its own
-- **URL Decoders** — Under every URL: unwrap Safe Links / Proofpoint v1–v3 / Google / Barracuda / Cisco / open redirects, multi-layer URL decoding, Base64, punycode (reveals lookalike characters), HTML entities, hex and `\u`/`\x` escapes, or everything at once
-- **File Hashing** — Decodes every file part in the message, attachments and inline images alike, and shows SHA-256 and MD5 for each so any of them can be checked against VirusTotal in one click
-- **Sender IP** — States the originating IP (where the message entered the mail system) separately from the last relay, each with VirusTotal and AbuseIPDB lookup buttons
-- **Language Analysis** — Detects urgency, authority/fear, financial fraud, credential-harvesting and BEC / payment-fraud language (changed bank details, invoice pressure, executive impersonation, secrecy, gift-card requests) with inline highlighting
-- **Risk Scoring** — Composite score based on authentication failures, IOC risk flags, and language analysis, with every point explained. Warns when the evidence is too thin to trust a low score (forwarded messages, missing authentication headers)
-- **VirusTotal Integration** — Optional per-IOC lookup for URLs, domains, IPs, and file hashes (requires your own API key)
-- **AbuseIPDB Integration** — Optional per-IOC IP reputation lookup (requires your own API key)
-- **Defang/Copy** — One-click defanging for safe sharing, and copy-to-clipboard for any IOC
-- **IOC Report Export** — Download a self-contained HTML report styled like the app (opens offline, prints cleanly to PDF) and/or a CSV (for SIEMs, blocklists and spreadsheets). Every indicator is defanged, hashes are left intact, and any VirusTotal/AbuseIPDB lookups already run are included. The HTML report loads nothing and runs no scripts; the CSV guards against spreadsheet formula injection and can optionally carry a raw-values column for tooling
+## Contents
 
-## Privacy
+- [Highlights](#highlights)
+- [Quick start](#quick-start)
+- [How to use it](#how-to-use-it)
+- [Features](#features)
+  - [Quick Summary](#quick-summary)
+  - [Verdict and scoring](#verdict-and-scoring)
+  - [Email authentication](#email-authentication)
+  - [Sender IP and route](#sender-ip-and-route)
+  - [Indicators of compromise](#indicators-of-compromise)
+  - [URL decoders](#url-decoders)
+  - [Attachments and file hashes](#attachments-and-file-hashes)
+  - [Language analysis](#language-analysis)
+  - [Body preview](#body-preview)
+  - [Email headers](#email-headers)
+  - [Report export](#report-export)
+  - [VirusTotal and AbuseIPDB lookups](#virustotal-and-abuseipdb-lookups)
+  - [Mobile](#mobile)
+- [Privacy and security](#privacy-and-security)
+- [How it works](#how-it-works)
+- [Project structure](#project-structure)
+- [Testing and deployment](#testing-and-deployment)
+- [Sample data](#sample-data)
+- [Known limitations](#known-limitations)
+- [License](#license)
 
-This tool runs entirely in your browser. Nothing is uploaded or transmitted, except IOCs you explicitly submit to VirusTotal/AbuseIPDB using your own API key. See the Settings panel to configure API keys.
+---
 
-## Quick Start
+## Highlights
+
+- **Authentication done the way receiving servers do it** — SPF, DKIM and DMARC read from the header your own mail server wrote, forged headers flagged, and DMARC-style domain alignment explained in plain terms.
+- **Finds what the link is hiding** — unwraps Microsoft Safe Links, Proofpoint and open redirects, decodes Base64, punycode and more, and analyses the real destination as an indicator of its own.
+- **Every indicator in one place** — URLs (including tracking pixels), domains, IPs, email addresses, attachments and inline images with SHA-256/MD5, and deceptive links.
+- **Reads the wording** — urgency, fear, financial fraud, credential harvesting, and Business Email Compromise / payment fraud.
+- **A verdict you can explain** — every point of the score has a reason, and the tool says when the evidence is too thin to trust a low score.
+- **Report in one click** — a styled, self-contained HTML report and/or a CSV, with every indicator defanged.
+- **Private by design** — no uploads, no tracking, and the message's own HTML preview cannot phone home.
+- **Works on phones.**
+
+---
+
+## Quick start
+
+### Use it online
+
+Open **https://boode-hub.github.io/Phishing-Analyzer/** — no install. Everything works there except the VirusTotal/AbuseIPDB lookups (see [why](#where-lookups-work)).
+
+### Run it locally
+
+Requires [Node.js](https://nodejs.org/). There are no dependencies to install and no build step.
 
 ```bash
-# Clone the repository
 git clone https://github.com/boode-hub/Phishing-Analyzer.git
 cd Phishing-Analyzer
-
-# Start the local server
 node server.js
-
-# Open http://localhost:8080 in your browser
-# Port taken or refused (Windows reserves some ranges)? PORT=3000 node server.js
 ```
 
-## Usage
+Open **http://localhost:8080**. Running locally also makes the VirusTotal and AbuseIPDB lookups work with nothing more than your API key.
 
-1. **Paste** the raw message source into the text area, or **upload** a `.eml` file. Use the original message, not a forward — a forward's headers describe the forward
+If port 8080 is taken or refused — Windows reserves some port ranges — choose another:
 
-2. Click **Analyze Email**
-3. Review the panels:
-   - **Quick Summary** — Key signals at a glance
-   - **Analysis Result** — Risk tier, score breakdown, and reasons
-   - **Email Authentication** — SPF/DKIM/DMARC results and domain alignment
-   - **Indicators of Compromise (IOCs)** — Extracted URLs, domains, IPs, emails, attachments
-   - **Body & Language Analysis** — Plain text, HTML preview, and highlighted suspicious phrases
-   - **Email Headers** — Two views: key headers first, and the original order exactly as in the email, with each Received header labelled by hop
-4. (Optional) Add VirusTotal/AbuseIPDB API keys in **Settings** to enable per-IOC enrichment
+```bash
+PORT=3000 node server.js
+```
 
-## Project Structure
+---
+
+## How to use it
+
+1. **Get the original message source.** A forwarded copy is not good enough: a forward's headers describe the forward, not the original sender.
+   - **Gmail:** open the message → ⋮ → **Show original** → copy it, or **Download original** for an `.eml` file.
+   - **Outlook on the web:** open the message → ⋯ → **View** → **View message source**.
+   - **Outlook desktop:** **File → Properties** shows the Internet headers. Headers alone are enough for the authentication and routing analysis; body, links and attachments need the full source.
+2. **Paste** it into the input box, or **upload** the `.eml` / `.txt` file.
+3. Click **Analyze Email**.
+4. Read the **Quick Summary** first, then drill into the panels below it.
+5. Optionally add **VirusTotal / AbuseIPDB API keys** in **Settings** to look indicators up in place.
+6. **Export** an HTML report and/or a CSV from the bar above the results.
+
+Text that is not an email is refused rather than given a verdict. `.msg` files are not supported yet — save or convert the message to `.eml`.
+
+---
+
+## Features
+
+### Quick Summary
+
+The first panel answers "is this phishing?" and shows the evidence at a glance.
+
+| Card | Shows |
+|---|---|
+| **Verdict** | Risk tier, score out of 100, the top three reasons, and any caveats about the evidence |
+| **Authentication** | SPF, DKIM and DMARC results and whether the domains align |
+| **IOCs found** | Counts of URLs, domains, IPs, emails and files, highlighted when any is high-risk |
+| **Sender** | From address and domain, and whether DMARC verifies it — shown as **Not verified — fails DMARC** for a spoofed sender |
+| **Reply-To** | The real Reply-To header, if any, and whether replies go to a different domain |
+| **Message** | Decoded subject, date and mailer |
+| **Sender IP** | The sender's public originating IP and the last relay, each with Copy, VirusTotal and AbuseIPDB buttons |
+| **Language** | Every suspicious phrase found, grouped by category and colour-coded by severity |
+
+### Verdict and scoring
+
+The score combines three categories, each capped at 100 **before** weighting so that a large number of minor findings cannot outweigh a clean authentication result:
+
+| Category | Weight | What raises it |
+|---|---|---|
+| **Authentication** | 60% | SPF/DKIM/DMARC failures, missing records, domain misalignment, a differing Reply-To, forged or duplicated headers |
+| **Indicators** | 25% | Deceptive links, raw-IP links, punycode domains, URL shorteners, executable or double-extension attachments, disposable email addresses |
+| **Language** | 15% | Phrases in the language categories — deliberately the weakest signal, since urgent wording is common in legitimate mail |
+
+| Score | Tier |
+|---|---|
+| 60–100 | **High Risk** |
+| 30–59 | **Suspicious** |
+| 0–29 | **Low Risk** |
+
+- A message where SPF, DKIM and DMARC all fail on a misaligned domain reaches **High Risk** on authentication alone.
+- Repeated low-severity findings have diminishing returns — the twentieth shortened link adds almost nothing.
+- **Every point comes with a reason**, listed under its category in the **Analysis Result** panel.
+- **Caveats** warn when a low score is not a clean result:
+  - the subject starts with `Fw:` / `Fwd:` — likely a forward whose headers describe the forward;
+  - no authentication or routing headers were found at all;
+  - no SPF, DKIM or DMARC result was recorded.
+
+### Email authentication
+
+**SPF, DKIM and DMARC**
+
+- Results are taken from the **topmost `Authentication-Results` header** — the one your own receiving server wrote. Lower headers can be forged by the sender; if one claims a pass that the receiving server did not record, it is flagged.
+- Headers are parsed clause by clause, so text inside comments is never mistaken for a result.
+- Microsoft 365's format, which omits the server name and writes `smtp.mailfrom` as a bare domain, is handled.
+- `Received-SPF` is read in both the standard form and Microsoft's.
+- **SPF is shown from both headers side by side** — `Authentication-Results` and `Received-SPF` — each with the IP it evaluated and the identity it checked. If they disagree on the result or the IP, it is flagged; `Authentication-Results` decides the verdict.
+- Every result state is kept distinct: pass, fail, softfail, neutral, none, temperror, permerror, and "signed but unverified" for DKIM.
+
+**Domain alignment**
+
+Alignment follows DMARC and is spelled out as a comparison, for example:
+
+> **SPF** · Return-Path `em6908.spglobal.com` = From `spglobal.com` · **Aligned — relaxed, both under spglobal.com**
+
+- **SPF alignment** compares the envelope sender (Return-Path) with From; **DKIM alignment** compares the signing domain with From.
+- **Strict** means identical domains; **relaxed** means the same organizational domain (`mail.example.com` and `example.com`), recognising multi-part suffixes such as `co.uk` and `com.au`.
+- DMARC is satisfied when **either** SPF or DKIM both passes and aligns; alignment without a passing check does not count, and the table says so.
+- **Reply-To is not a DMARC input.** A differing Reply-To is shown as informational and priced as a caution, not a failure.
+
+**Header trust warnings**
+
+- A lower `Authentication-Results` header contradicting the receiving server's result.
+- More than one `From`, `Subject`, `Reply-To`, `Return-Path`, `Date` or `To` header.
+
+### Sender IP and route
+
+- **Received chain** — every hop in order of travel (hop 1 is where the message started), with sending host, receiving host, IP and timestamp. Hops with a private origin or timestamps running backwards are flagged.
+- The sending IP is read **only from each hop's `from` clause**, never from the `by` clause, which names the server that received it.
+- **Originating IP** — the sender's public address. When the first hop records a private address (a workstation behind NAT, an internal relay), it is kept for the record and the analyzer walks outward to the first public address.
+- **Last relay** — the server that delivered the message to you.
+- Every address is **validated** — IPv4 octets within range and without ambiguous leading zeros, IPv6 including compressed and IPv4-mapped forms. Queue IDs and version strings that merely look like addresses are discarded.
+- Private and reserved addresses are labelled and are **not offered for reputation lookups**, since the services hold no data on them.
+
+### Indicators of compromise
+
+| Indicator | Where it is found | Risk flags |
+|---|---|---|
+| **URLs** | Plain text, link targets, and remote resources that load when the message is opened (tracking pixels, remote images, scripts, frames) | Deceptive link, raw IP address, punycode, URL shortener |
+| **Real destinations** | Unwrapped from Safe Links, Proofpoint and redirect links, and listed as URLs of their own | Every URL check runs on the real destination too |
+| **Domains** | Every URL, every unwrapped destination, the From / Reply-To / Return-Path addresses, the Message-ID | Punycode |
+| **IP addresses** | Received headers, `X-Originating-IP`, the message body | Originating IP (can be spoofed), private/reserved |
+| **Email addresses** | From, Reply-To, Return-Path, the message body | Disposable email provider |
+| **Attachments** | Every file part, including inline images and parts with a Content-ID | Double extension, risky executable extension |
+| **Deceptive links** | Links whose visible text shows one address while pointing to another | — |
+
+**How the flags decide**
+
+- A link is **deceptive** only when its visible text itself looks like a URL or domain and points to a different organization — compared *after* unwrapping, so a Safe Links rewrite of the same site is not flagged, but a rewrite hiding a different domain is. Ordinary link text such as "View invoice" is never flagged.
+- **URL shortener** and **disposable email** checks match the exact domain or its subdomains, so `t.co` does not match `microsoft.com`.
+- **Risky extensions:** `.exe .scr .js .hta .vbs .bat .cmd .pif .msi .com .dll .ps1 .sh .bash .jar .app .dmg`, plus double extensions such as `.pdf.exe`.
+
+**On every indicator row:** **Copy**, **Defang** (switches between the live and defanged value), and **VirusTotal** / **AbuseIPDB** lookup buttons where they apply. Email addresses also get a lookup for their domain. Long tables show the first 50 rows with a **Show all** button.
+
+### URL decoders
+
+Every URL has a **Decode URL** section. It is highlighted with the encodings it detected, and each decoder runs with one click:
+
+| Decoder | What it does |
+|---|---|
+| **Decode all** | Applies every reversible layer until the URL stops changing, then reports any hidden Base64/hex payloads and the punycode display form |
+| **Unwrap Safe Links / redirect** | Recovers the real destination from Microsoft Defender Safe Links, Proofpoint URL Defense v1, v2 and v3, Google and Facebook redirects, Barracuda Link Protection, Cisco Secure Email, and any redirect parameter holding a URL — recursively, when wrappers are nested. Mimecast links say plainly that the destination is held on Mimecast's servers and cannot be recovered |
+| **URL %XX** | Percent-decoding, including multiple layers, which are flagged as an evasion technique |
+| **Base64** | Decodes Base64 and Base64URL tokens that produce readable text, and flags a hidden email address — usually the targeted recipient |
+| **Punycode** | Shows how an `xn--` domain actually displays and names the lookalike characters, e.g. `pаypal.com` with a Cyrillic `а` (U+0430) |
+| **HTML entities** | `&amp;`, `&#x2F;` and similar |
+| **Hex** | Hex runs that decode to readable text; hashes and random IDs are ignored |
+| **\u \x escapes** | JavaScript-style escape sequences |
+
+### Attachments and file hashes
+
+- Every MIME part is decoded to its exact bytes — nested multipart messages, Base64 and quoted-printable encodings, and encoded filenames included.
+- **Inline images and embedded files are collected too**, not only parts marked as attachments.
+- **SHA-256 and MD5** are shown for each file, with its type, size and whether it is inline.
+- The VirusTotal button on a file looks up its hash.
+
+### Language analysis
+
+Phrases are matched as **whole words** (so "first" never matches "IRS", nor "courtesy" match "court") in five categories:
+
+| Category | Examples | Severity |
+|---|---|---|
+| **Urgency** | act now, within 24 hours, account will be suspended, final warning | Caution |
+| **Authority / Fear** | legal action, law enforcement, IRS, unauthorized access, final notice | Caution |
+| **Financial / Fraud** | wire transfer, gift card, bitcoin, banking details, payment request | High |
+| **Credential harvesting** | click here to verify, confirm your password, reset your password | High |
+| **BEC / Payment fraud** | new or updated bank details, change of beneficiary, wire instructions, direct-deposit changes, overdue invoice, process the payment, proof of payment, "are you available", "I'm in a meeting", keep this confidential, purchase gift cards and send the codes | High |
+
+- The **Quick Summary** lists the phrases found, grouped by category, with repeated phrases shown once with a count (`Act now ×2`).
+- The **Body & Language Analysis** panel shows the full breakdown and highlights every phrase inline, coloured by category.
+
+### Body preview
+
+- **Plain text** view with suspicious phrases highlighted.
+- **HTML preview** in a fully sandboxed frame with a content security policy that blocks every remote request — the message's tracking pixels and remote images do not load, so opening the preview never tells the sender you looked.
+
+### Email headers
+
+The **Email Headers** panel has two collapsible views:
+
+- **Key headers first** — important headers on top, then everything else.
+- **Original order** — every header numbered, exactly as it appears in the email. Each `Received` header is labelled with its hop (**hop 1 · origin** through **last**) and authentication headers are marked. **Copy raw headers** copies the original header block verbatim.
+
+### Report export
+
+The **Export IOC report** bar above the results downloads either format or both.
+
+**HTML report** — a single self-contained file in the app's own design:
+
+- Verdict with score meter, subject, sender and indicator counts.
+- Message details; a score card per category with its reasons; authentication with SPF by header and domain alignment; sender path and the received chain; and every indicator — URL cards with their real destinations nested inside, tables for domains, IPs and emails, and attachment cards with click-to-select hashes.
+- Includes any VirusTotal / AbuseIPDB lookups already run.
+- **Opens offline and makes no network request** — no web fonts, images or scripts; a content security policy blocks anything from loading or running.
+- Adapts to phones, and **prints cleanly** to a light layout — use **Print → Save as PDF** for a PDF.
+
+**CSV** — one indicator per row, for SIEMs, blocklists and spreadsheets:
+
+| Column | Contents |
+|---|---|
+| `type` | `url`, `domain`, `ip`, `email`, `filename`, `sha256`, `md5`, `deceptive_link` |
+| `indicator` | The defanged value (hashes and filenames unchanged) |
+| `source` | Where it was found |
+| `risk_flags` | Flags, separated by `;` |
+| `details` | Context — e.g. the wrapper a URL was unwrapped from, a file's type and size |
+| `virustotal` / `abuseipdb` | Lookup results, if run |
+| `indicator_raw` | Optional — the live value, for importing into tooling |
+
+- UTF-8 with a byte-order mark and CRLF line endings, so it opens correctly in Excel.
+- Cells that would start with `= + - @` are prefixed so spreadsheets cannot execute them as formulas.
+
+**Defanging** (both formats)
+
+| Original | Defanged |
+|---|---|
+| `https://evil.com/path` | `hxxps[://]evil[.]com/path` |
+| `evil.com` | `evil[.]com` |
+| `203.0.113.5` | `203[.]0[.]113[.]5` |
+| `2001:db8::1` | `2001[:]db8[:][:]1` |
+| `user@evil.com` | `user[@]evil[.]com` |
+
+Domains hidden inside a URL's query — such as the destination carried by a Safe Links wrapper — are defanged too, because chat tools auto-link bare domains. Hashes and filenames are never altered. Files are named `phishing-report_<date>_<subject>.html` / `.csv`.
+
+### VirusTotal and AbuseIPDB lookups
+
+Optional. Add your API keys in **Settings**; they are stored in this browser only and sent only to the service when you click a lookup button.
+
+**VirusTotal**
+
+- Look up **URLs, domains, IPs and file hashes** from any indicator row or the Sender IP card.
+- Shows the verdict (malicious / suspicious / clean), engine counts, last analysis date, reputation, and metadata such as AS owner, country and file name.
+- A URL VirusTotal has never seen is submitted for analysis automatically.
+- **Rescan** requests a fresh analysis; **Open in VT** opens the full report.
+
+**AbuseIPDB**
+
+- Look up **IP addresses**. Shows abuse confidence score, total reports, country, ISP, domain, usage type and last report date.
+
+**Both**
+
+- Results are cached for the session, so re-opening a result does not spend quota.
+- Key formats are checked before any request is made. Malformed IP addresses are refused, and private or reserved addresses get no lookup buttons.
+- Invalid-key, permission, rate-limit and timeout errors are explained; connectivity failures also offer a link to the vendor's web report.
+
+#### Where lookups work
+
+**Run locally (`node server.js`) and an API key is all you need.** The local server serves the app and relays the API calls, so there is nothing else to configure; **Settings** confirms "Lookups are ready".
+
+**From GitHub Pages, lookups cannot work — and no client-side code can change that.** Neither service allows browsers on other websites to read its API responses (AbuseIPDB rejects the browser's preflight check outright; VirusTotal answers it without permission), so the browser discards the response. An API key does not help; the block is on the response, not on authentication. **Settings** says so when you are on a hosted copy. Everything else works on Pages.
+
+If you need lookups from a hosted copy, put a relay you control in front of the services — a template for a free **Cloudflare Worker** is included:
+
+1. Create a free account at [workers.cloudflare.com](https://workers.cloudflare.com/).
+2. Create a Worker and paste in [`cors-worker.js`](cors-worker.js).
+3. Deploy it and copy its URL.
+4. In the app's **Settings**, enter it in **CORS Proxy URL**, ending with `?url=` — e.g. `https://your-worker.your-subdomain.workers.dev?url=`.
+
+Note that a relay sees the indicators and API keys that pass through it — use only one you operate.
+
+### Mobile
+
+The whole app is usable on a phone:
+
+- Tables become stacked cards — no sideways scrolling.
+- Buttons and toggles are at least 40px tall, and no text is smaller than 11px.
+- Side-by-side cards stack; the header keeps the title on one line.
+- The exported HTML report adapts the same way.
+
+---
+
+## Privacy and security
+
+**What leaves your machine**
+
+- Nothing, by default. Parsing, decoding, hashing, scoring and report generation all run in your browser.
+- An indicator is sent to VirusTotal or AbuseIPDB **only** when you click its lookup button, together with your API key.
+- API keys are kept in your browser's local storage and can be cleared from **Settings**.
+
+**Handling hostile content** — every email is treated as attacker-controlled:
+
+- All message content is escaped before display.
+- The HTML preview runs in a fully sandboxed frame with remote loading blocked, so it cannot run scripts or reveal that you opened the message.
+- Exported HTML reports carry a content security policy that blocks all loading and script execution, and contain no clickable links to indicators — only in-page navigation.
+- CSV cells cannot run as spreadsheet formulas.
+- The local server only serves files inside the project folder.
+
+---
+
+## How it works
+
+A pure HTML, CSS and JavaScript application — ES modules, no framework, no build step, no dependencies. The Web Crypto API provides SHA-256.
+
+```
+Raw email
+  │
+  ├─ parse-headers.js   headers (original order and by name), addresses, decoded subject
+  │     └─ refuses input with no email headers
+  ├─ parse-auth.js      SPF / DKIM / DMARC, domain alignment, header trust,
+  │                     received chain, sender's public IP
+  ├─ parse-body.js      MIME tree → text, HTML, links, remote resources, file bytes
+  ├─ extract-iocs.js    URLs (+ unwrapped destinations), domains, IPs, emails,
+  │                     attachments, risk flags
+  ├─ hash-utils.js      SHA-256 / MD5 of every file
+  ├─ analyze-language.js phrase detection in five categories
+  ├─ score.js           capped, weighted score · tier · reasons · caveats
+  │
+  ├─ render.js          all panels, URL decoders, header views
+  └─ report.js          HTML and CSV export, defanging
+```
+
+`url-decode.js` provides the unwrapping and decoding used by both the IOC extraction and the decoder panels; `ip-utils.js` provides address validation throughout.
+
+---
+
+## Project structure
 
 ```
 /
-├── index.html              # App shell
-├── favicon.svg             # App icon (+ favicon-32.png, apple-touch-icon.png)
+├── index.html                  App shell
+├── favicon.svg                 App icon (+ favicon-32.png, apple-touch-icon.png)
 ├── styles/
-│   └── main.css            # Design system & styling
+│   └── main.css                Design system and all styles
 ├── scripts/
-│   ├── main.js             # App init, event wiring, API lookups
-│   ├── parse-headers.js    # Header extraction & unfolding
-│   ├── parse-auth.js       # SPF/DKIM/DMARC, alignment, received chain, sender IP
-│   ├── parse-body.js       # MIME tree parsing, links, remote resources
-│   ├── extract-iocs.js     # IOC extraction + risk flagging
-│   ├── url-decode.js       # URL unwrapping and decoders
-│   ├── report.js           # HTML/CSV report export and defanging
-│   ├── ip-utils.js         # IP validation and extraction
-│   ├── analyze-language.js # Urgency/fraud keyword scoring
-│   ├── score.js            # Composite verdict scoring
-│   ├── render.js           # DOM rendering for all panels
-│   └── hash-utils.js       # SHA-256 & MD5 (byte-accurate) for file hashing
-├── tests/                  # Plain node test suites (see Tests)
-├── sample-data/            # Test .eml files
-│   ├── legitimate-email.eml
-│   ├── phishing-spoofed.eml
-│   └── phishing-urgency.eml
-├── .github/workflows/      # Runs the tests, then deploys to GitHub Pages
-├── server.js               # Local server + API relay
-└── README.md
+│   ├── main.js                 Start-up, analysis flow, lookups, export controls
+│   ├── parse-headers.js        Header parsing and unfolding
+│   ├── parse-auth.js           Authentication, alignment, received chain, sender IP
+│   ├── parse-body.js           MIME parsing, links, remote resources, attachments
+│   ├── extract-iocs.js         Indicator extraction and risk flags
+│   ├── url-decode.js           URL unwrapping and decoders
+│   ├── ip-utils.js             IP validation and extraction
+│   ├── analyze-language.js     Phrase detection
+│   ├── score.js                Scoring, reasons and caveats
+│   ├── render.js               Rendering for every panel
+│   ├── report.js               HTML / CSV report export and defanging
+│   └── hash-utils.js           Byte-accurate SHA-256 and MD5
+├── tests/                      Test suites (see below)
+├── sample-data/                Example .eml files
+├── server.js                   Local server and API relay
+├── cors-worker.js              Optional Cloudflare Worker relay for hosted copies
+├── test-api.html               Stand-alone page that checks whether a browser can reach the lookup APIs
+├── phishing-analyzer-master-prompt_v2.md   Original build specification (historical; superseded by this README)
+└── .github/workflows/pages.yml Test, then deploy to GitHub Pages
 ```
 
-## Tech Stack
+---
 
-- Pure HTML5 + CSS3 + vanilla JavaScript (ES modules)
-- No build step required
-- No external libraries or CDN dependencies
-- Web Crypto API for SHA-256 hashing
-- LocalStorage for API key persistence
+## Testing and deployment
 
-## API Integrations (Optional)
-
-### VirusTotal
-
-- URL lookup via `/api/v3/urls/{url_id}`
-- Domain lookup via `/api/v3/domains/{domain}`
-- IP lookup via `/api/v3/ip_addresses/{ip}`
-- File hash lookup via `/api/v3/files/{sha256}`
-- Auto-submits URLs for analysis if not found
-
-### AbuseIPDB
-
-- IP reputation check via `/api/v2/check`
-- Shows abuse confidence score, total reports, country, ISP
-
-### Where lookups work
-
-**Run locally and an API key is all you need.**
+The test suites are plain Node.js scripts with no test framework. Where a result can be checked against an independent source, it is — hashes against `node:crypto`, punycode against `node:url`, Proofpoint decoding against Proofpoint's published examples.
 
 ```bash
-node server.js
-# Open http://localhost:8080, paste your keys in Settings, done.
-```
-
-`server.js` serves the page *and* relays the API calls, so both are same-origin
-and nothing else has to be configured.
-
-**Lookups cannot work from GitHub Pages, and no client-side code can change
-that.** Neither vendor sends CORS headers — AbuseIPDB rejects the preflight with
-`405 Method Not Allowed`, and VirusTotal answers the preflight without an
-`Access-Control-Allow-Origin` header — so the browser discards the response
-before the page ever sees it. An API key does not help; the block is on the
-response, not on authentication. Everything else (parsing, scoring, IOC
-extraction, file hashing) runs fine on Pages. The Settings panel says which
-situation you are in.
-
-If you specifically need lookups from a hosted page, the only route is to put
-something you control in front of the vendors:
-
-**Cloudflare Worker (optional, hosted deployments only)**
-1. Go to [workers.cloudflare.com](https://workers.cloudflare.com/) and create a free account
-2. Create a new Worker and paste the code from [`cors-worker.js`](cors-worker.js)
-3. Save and deploy - copy your worker URL (e.g., `https://your-worker.your-subdomain.workers.dev`)
-4. In the Phishing Analyzer app, open **Settings** and paste the worker URL in the **CORS Proxy URL** field
-5. The worker URL should end with `?url=` (e.g., `https://your-worker.workers.dev?url=`)
-
-**Why a proxy is needed:** VirusTotal and AbuseIPDB APIs don't send `Access-Control-Allow-Origin` headers, so browsers reject responses from GitHub Pages. A CORS proxy adds these headers. The Cloudflare Worker template provided forwards all headers (including your API keys) securely.
-
-## Sample Data
-
-Three synthetic `.eml` files are included for testing:
-
-| File                   | Description                                    | Expected Result |
-| ---------------------- | ---------------------------------------------- | --------------- |
-| `legitimate-email.eml` | Clean email with passing auth                  | Low Risk        |
-| `phishing-spoofed.eml` | Spoofed domain, auth failures, domain mismatch | High Risk       |
-| `phishing-urgency.eml` | Urgency/financial language, passing auth       | Low Risk †      |
-
-† The message authenticates correctly, and language alone is deliberately not
-enough to raise the tier — urgent wording is common in legitimate mail. The
-language findings are still listed in the verdict.
-
-
-## Tests
-
-```bash
-node tests/runner.mjs            # module unit tests
-node tests/auth.test.mjs         # SPF/DKIM/DMARC parsing + alignment + scoring
-node tests/attachments.test.mjs  # MIME extraction + file hashing
-node tests/ip.test.mjs           # IP validation, extraction, private ranges
+node tests/runner.mjs            # module unit tests and end-to-end sample checks
+node tests/auth.test.mjs         # SPF/DKIM/DMARC parsing, alignment, scoring
+node tests/attachments.test.mjs  # MIME extraction and file hashing
+node tests/ip.test.mjs           # IP validation, extraction, sender IP resolution
 node tests/url-decode.test.mjs   # URL unwrapping and decoders
-node tests/links.test.mjs        # link/IOC extraction, summary and verdict rendering
-node tests/report.test.mjs       # report export: no live indicators, table/CSV integrity
+node tests/links.test.mjs        # link and IOC extraction, summary and verdict rendering
+node tests/report.test.mjs       # report export: defanging, safety, well-formed output
 node tests/headers.test.mjs      # original header order view
 node tests/language.test.mjs     # whole-word matching, BEC / payment-fraud phrases
 ```
 
-Attachment hashes are asserted against `node:crypto`, not against values this
-codebase produced, so a self-consistent wrong hash cannot pass.
+| Suite | Tests |
+|---|---|
+| runner | 92 |
+| auth | 37 |
+| url-decode | 26 |
+| ip | 24 |
+| report | 19 |
+| links | 17 |
+| attachments | 9 |
+| language | 7 |
+| headers | 6 |
+| **Total** | **237** |
+
+**Deployment:** every push to `master` runs all suites in GitHub Actions and deploys to GitHub Pages only if they pass. A broken build never reaches the live site. After a deploy, browsers may keep the previous version for a few minutes — press **Ctrl+F5** to load the latest.
+
+---
+
+## Sample data
+
+| File | Description | Result |
+|---|---|---|
+| `legitimate-email.eml` | Clean message, all authentication passing | Low Risk (0) |
+| `phishing-spoofed.eml` | Spoofed domain, authentication failures, misaligned domain | High Risk (68) |
+| `phishing-urgency.eml` | Urgent and financial wording, authentication passing | Low Risk (6) † |
+
+† The message authenticates correctly, and wording alone is deliberately not enough to raise the tier. The language findings are still listed in the summary and the verdict.
+
+---
+
+## Known limitations
+
+- **Lookups need the local server** (or a relay you run) — see [Where lookups work](#where-lookups-work).
+- **Wording alone cannot raise the risk tier.** This prevents false alarms from urgent-sounding legitimate mail, but it means a Business Email Compromise message sent from a genuine, compromised account can score **Low Risk** while its BEC phrases are listed. Always verify payment or bank-detail changes by phone using a known number.
+- **Language detection is English-only.**
+- **Relaxed alignment uses a compact list of multi-part domain suffixes**, not the full Public Suffix List; unusual country suffixes may be judged by their last two labels.
+- **Attachments are hashed, not scanned** — look the hash up to learn about the file.
+- **Mimecast-rewritten links cannot be unwrapped**, because Mimecast keeps the destination on its servers.
+- **`.msg` files are not supported** — convert to `.eml` or paste the source.
+
+---
 
 ## License
 
