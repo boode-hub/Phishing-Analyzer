@@ -29,6 +29,7 @@ All analysis runs locally in your browser. Nothing is uploaded; the only data th
   - [Email headers](#email-headers)
   - [Report export](#report-export)
   - [VirusTotal and AbuseIPDB lookups](#virustotal-and-abuseipdb-lookups)
+  - [Theme colour](#theme-colour)
   - [Mobile](#mobile)
 - [Privacy and security](#privacy-and-security)
 - [How it works](#how-it-works)
@@ -316,6 +317,10 @@ If you need lookups from a hosted copy, put a relay you control in front of the 
 
 Note that a relay sees the indicators and API keys that pass through it — use only one you operate.
 
+### Theme colour
+
+**Settings → Theme colour** opens your browser's colour picker. The choice recolours only the green accent — buttons, pass badges, focus rings and the logo — while backgrounds and the red/amber severity colours stay fixed so they keep their meaning. It applies instantly, is remembered in this browser, and **Reset** returns to the default `#9fef00`. Exported reports always use the default colours.
+
 ### Mobile
 
 The whole app is usable on a phone:
@@ -391,13 +396,15 @@ Raw email
 │   ├── score.js                Scoring, reasons and caveats
 │   ├── render.js               Rendering for every panel
 │   ├── report.js               HTML / CSV report export and defanging
-│   └── hash-utils.js           Byte-accurate SHA-256 and MD5
+│   ├── hash-utils.js           Byte-accurate SHA-256 and MD5
+│   └── theme.js                Accent colour picker palette
 ├── tests/                      Test suites (see below)
 ├── sample-data/                Example .eml files
 ├── server.js                   Local server and API relay
 ├── cors-worker.js              Optional Cloudflare Worker relay for hosted copies
 ├── test-api.html               Stand-alone page that checks whether a browser can reach the lookup APIs
-├── phishing-analyzer-master-prompt_v2.md   Original build specification (historical; superseded by this README)
+├── phishing-analyzer-master-prompt_v3.md   Complete build prompt: rebuild the whole platform from this one document
+├── phishing-analyzer-master-prompt_v2.md   Original build specification (historical; superseded by v3)
 └── .github/workflows/pages.yml Test, then deploy to GitHub Pages
 ```
 
@@ -417,6 +424,8 @@ node tests/links.test.mjs        # link and IOC extraction, summary and verdict 
 node tests/report.test.mjs       # report export: defanging, safety, well-formed output
 node tests/headers.test.mjs      # original header order view
 node tests/language.test.mjs     # whole-word matching, BEC / payment-fraud phrases
+node tests/theme.test.mjs        # accent colour palette, apply and reset
+node tests/imports.test.mjs      # every cross-module call is imported
 ```
 
 | Suite | Tests |
@@ -430,7 +439,9 @@ node tests/language.test.mjs     # whole-word matching, BEC / payment-fraud phra
 | attachments | 9 |
 | language | 7 |
 | headers | 6 |
-| **Total** | **237** |
+| theme | 3 |
+| imports | 1 |
+| **Total** | **241** |
 
 **Deployment:** every push to `master` runs all suites in GitHub Actions and deploys to GitHub Pages only if they pass. A broken build never reaches the live site. After a deploy, browsers may keep the previous version for a few minutes — press **Ctrl+F5** to load the latest.
 
