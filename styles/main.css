@@ -1327,6 +1327,10 @@ mark.lang-highlight.financial {
   background: var(--blue-bg);
   color: var(--blue);
 }
+mark.lang-highlight.bec {
+  background: var(--purple-bg);
+  color: var(--purple);
+}
 mark.lang-highlight.credential {
   background: var(--purple-bg);
   color: var(--purple);
@@ -1381,6 +1385,12 @@ mark.highlight-authority {
 mark.highlight-financial {
   background: var(--blue-bg);
   color: var(--blue);
+  padding: 0.1rem 0.2rem;
+  border-radius: 2px;
+}
+mark.highlight-bec {
+  background: var(--purple-bg);
+  color: var(--purple);
   padding: 0.1rem 0.2rem;
   border-radius: 2px;
 }
@@ -2729,5 +2739,30 @@ mark.highlight-credential {
 @media (max-width: 768px) {
   .lang-chip b {
     font-size: 11px;
+  }
+}
+
+/* ===== SENDER IP + LANGUAGE ROW ===== */
+.summary-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+  align-items: stretch;
+}
+.summary-split > * {
+  min-width: 0;
+}
+.summary-split > .summary-ip-card,
+.summary-split > .summary-lang-card {
+  margin-top: 0;
+}
+/* Half width: categories stack two-up instead of four across. */
+.summary-split .lang-groups {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+@media (max-width: 768px) {
+  .summary-split {
+    grid-template-columns: 1fr;
   }
 }

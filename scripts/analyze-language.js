@@ -57,7 +57,6 @@ const KEYWORD_PATTERNS = {
       "final notice",
       "cease and desist",
       "penalty",
-      "fine",
       "violation",
       "compliance required",
       "mandatory",
@@ -122,6 +121,98 @@ const KEYWORD_PATTERNS = {
     ],
     weight: 1.3,
     label: "Credential Harvesting",
+  },
+  // Business Email Compromise and payment fraud: no link or attachment, just a
+  // convincing request to move money — redirect an invoice to "new" bank
+  // details, or an executive asking for a quick, confidential transfer. These
+  // messages often authenticate perfectly, so the wording is the main signal.
+  bec: {
+    keywords: [
+      // Changed payment details — the core of invoice / vendor fraud
+      "new bank details",
+      "updated bank details",
+      "change of bank details",
+      "change in bank details",
+      "bank details have changed",
+      "bank details has changed",
+      "our bank account has changed",
+      "changed our bank",
+      "new bank account",
+      "new account details",
+      "updated account details",
+      "change of payment details",
+      "updated payment details",
+      "new payment details",
+      "new remittance details",
+      "update the beneficiary",
+      "new beneficiary",
+      "beneficiary details",
+      "beneficiary account",
+      "wire instructions",
+      "wiring instructions",
+      "payment instructions",
+      "sort code",
+      "ach transfer",
+      "direct deposit",
+      "update my direct deposit",
+      "change my direct deposit",
+      "payroll change",
+      "payroll update",
+      // Invoice pressure
+      "overdue invoice",
+      "past due invoice",
+      "unpaid invoice",
+      "outstanding invoice",
+      "overdue payment",
+      "process the payment",
+      "process this payment",
+      "release the payment",
+      "settle the invoice",
+      "proof of payment",
+      "remittance advice",
+      "pro forma invoice",
+      "proforma invoice",
+      "same day payment",
+      "same-day payment",
+      "transfer the funds",
+      "wire the funds",
+      "urgent wire",
+      "urgent payment",
+      "vendor payment",
+      // Executive impersonation, secrecy and isolation
+      "are you available",
+      "are you at your desk",
+      "are you in the office",
+      "quick favor",
+      "quick favour",
+      "quick task",
+      "i need a favor",
+      "i need a favour",
+      "can you handle a task",
+      "keep this confidential",
+      "keep this between us",
+      "strictly confidential",
+      "confidential transaction",
+      "confidential matter",
+      "sensitive transaction",
+      "do not discuss this",
+      "don't discuss this",
+      "don't mention this",
+      "i'm in a meeting",
+      "i am in a meeting",
+      "can't talk right now",
+      "cannot talk right now",
+      "reply by email only",
+      "send me your cell",
+      "send me your mobile number",
+      "purchase gift cards",
+      "buy gift cards",
+      "scratch the back",
+      "send me the codes",
+      "send the codes",
+    ],
+    weight: 1.4,
+    label: "BEC / Payment Fraud",
   },
 };
 
@@ -273,8 +364,11 @@ export function analyzeLanguage(text) {
     const matches = [];
 
     for (const keyword of config.keywords) {
+      // Whole words only. Plain substring matching made "irs" match "first",
+      // "court" match "courtesy" and "swift" match "swiftly", so ordinary
+      // business mail scored as fear tactics and fraud.
       const regex = new RegExp(
-        keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        `(?<![\\w])${keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w])`,
         "gi",
       );
 
@@ -430,6 +524,7 @@ function getCategoryLabel(category) {
     authority: "Authority/Fear tactic",
     financial: "Financial fraud indicator",
     credential: "Credential harvesting attempt",
+    bec: "BEC / payment fraud indicator",
   };
   return labels[category] || category;
 }

@@ -15,7 +15,7 @@ A fully client-side web application that analyzes suspicious emails for phishing
 - **URL Decoders** — Under every URL: unwrap Safe Links / Proofpoint v1–v3 / Google / Barracuda / Cisco / open redirects, multi-layer URL decoding, Base64, punycode (reveals lookalike characters), HTML entities, hex and `\u`/`\x` escapes, or everything at once
 - **File Hashing** — Decodes every file part in the message, attachments and inline images alike, and shows SHA-256 and MD5 for each so any of them can be checked against VirusTotal in one click
 - **Sender IP** — States the originating IP (where the message entered the mail system) separately from the last relay, each with VirusTotal and AbuseIPDB lookup buttons
-- **Language Analysis** — Detects urgency, authority/fear, financial fraud, and credential-harvesting language patterns with inline highlighting
+- **Language Analysis** — Detects urgency, authority/fear, financial fraud, credential-harvesting and BEC / payment-fraud language (changed bank details, invoice pressure, executive impersonation, secrecy, gift-card requests) with inline highlighting
 - **Risk Scoring** — Composite score based on authentication failures, IOC risk flags, and language analysis, with every point explained. Warns when the evidence is too thin to trust a low score (forwarded messages, missing authentication headers)
 - **VirusTotal Integration** — Optional per-IOC lookup for URLs, domains, IPs, and file hashes (requires your own API key)
 - **AbuseIPDB Integration** — Optional per-IOC IP reputation lookup (requires your own API key)
@@ -167,6 +167,7 @@ node tests/url-decode.test.mjs   # URL unwrapping and decoders
 node tests/links.test.mjs        # link/IOC extraction, summary and verdict rendering
 node tests/report.test.mjs       # report export: no live indicators, table/CSV integrity
 node tests/headers.test.mjs      # original header order view
+node tests/language.test.mjs     # whole-word matching, BEC / payment-fraud phrases
 ```
 
 Attachment hashes are asserted against `node:crypto`, not against values this

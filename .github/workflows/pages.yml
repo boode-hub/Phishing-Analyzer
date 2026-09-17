@@ -37,6 +37,7 @@ jobs:
       - run: node tests/links.test.mjs
       - run: node tests/report.test.mjs
       - run: node tests/headers.test.mjs
+      - run: node tests/language.test.mjs
 
   deploy:
     needs: test

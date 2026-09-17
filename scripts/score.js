@@ -307,12 +307,16 @@ function scoreLanguage(lang) {
     authority: 0.5,
     financial: 0.8,
     credential: 0.8,
+    // BEC mail usually authenticates cleanly and carries no link or file, so
+    // its wording is weighted highest of the language signals.
+    bec: 1.0,
   };
   const labels = {
     urgency: "urgency phrase",
     authority: "authority/fear phrase",
     financial: "financial/fraud phrase",
     credential: "credential-harvesting phrase",
+    bec: "BEC / payment-fraud phrase",
   };
 
   let score = 0;

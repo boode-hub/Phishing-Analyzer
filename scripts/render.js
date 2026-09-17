@@ -150,10 +150,10 @@ export async function renderSummary(container, analysis, apiKeys) {
 
   html += '</div>';
 
-  // === LANGUAGE ===
-  html += renderLanguageCard(lang, analysis.body);
-
-  // === SENDER IP ===
+  // === SENDER IP + LANGUAGE (side by side) ===
+  // The IP card's content sits on the left and left an empty right half, so the
+  // language findings share its row.
+  html += '<div class="summary-split">';
   // The originating IP is the one that matters: Received headers are prepended,
   // so the LAST one is where the message entered the mail system. The card
   // previously showed it under the misleading label "Last Hop".
@@ -205,6 +205,9 @@ export async function renderSummary(container, analysis, apiKeys) {
     <div class="lookup-result-content"></div>
   </div>`;
 
+  html += renderLanguageCard(lang, analysis.body);
+  html += "</div>";
+
   container.innerHTML = html;
 }
 
@@ -232,7 +235,7 @@ function ipLookupButtons(ip, apiKeys) {
 
 // Credential and financial lures ask the victim to act against their own
 // interest; urgency and authority only apply pressure. Tone follows that.
-const LANG_TONE = { credential: "bad", financial: "bad", urgency: "warn", authority: "warn" };
+const LANG_TONE = { credential: "bad", financial: "bad", bec: "bad", urgency: "warn", authority: "warn" };
 
 /**
  * Quick Summary card listing the suspicious phrases found, grouped by
