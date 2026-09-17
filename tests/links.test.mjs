@@ -155,6 +155,27 @@ Content-Type: text/html
   );
 });
 
+test("shortener and disposable checks match whole domains, not substrings", () => {
+  const body = {
+    text: "https://www.microsoft.com/x https://urldefense.proofpoint.com/v2/url https://discount.co.uk/ https://notbit.ly.example.com/ https://t.co/abc https://go.bit.ly/x",
+    links: [],
+    attachments: [],
+  };
+  const iocs = extractIOCs(
+    { received: [], from: { email: "a@notmailinator.com" }, replyTo: { email: "b@mailinator.com" } },
+    body,
+  );
+  const flagged = (v) => iocs.urls.find((u) => u.value === v).riskFlags.some((f) => f.label === "URL Shortener");
+  for (const clean of ["https://www.microsoft.com/x", "https://urldefense.proofpoint.com/v2/url", "https://discount.co.uk/", "https://notbit.ly.example.com/"]) {
+    assert.equal(flagged(clean), false, `${clean} is not a shortener`);
+  }
+  assert.equal(flagged("https://t.co/abc"), true);
+  assert.equal(flagged("https://go.bit.ly/x"), true, "subdomains of a shortener still count");
+  const disposable = (e) => iocs.emails.find((x) => x.value === e).riskFlags.some((f) => f.label === "Disposable");
+  assert.equal(disposable("a@notmailinator.com"), false);
+  assert.equal(disposable("b@mailinator.com"), true);
+});
+
 test("IP-address hosts are not listed as domains", () => {
   const { iocs } = analyse(html(`<a href="http://203.0.113.9/login">x</a>`));
   assert.ok(!iocs.domains.some((d) => d.value === "203.0.113.9"));

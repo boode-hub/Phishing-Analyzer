@@ -36,6 +36,7 @@ jobs:
       - run: node tests/url-decode.test.mjs
       - run: node tests/links.test.mjs
       - run: node tests/report.test.mjs
+      - run: node tests/headers.test.mjs
 
   deploy:
     needs: test

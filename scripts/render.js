@@ -696,7 +696,7 @@ function renderMismatchedLinks(links) {
   const rows = shown
     .map(
       (link) =>
-        `<tr><td class="mono">${esc(link.text || "N/A")}</td><td class="mono">${esc(link.href || "N/A")}</td><td><span class="risk-tag high">MISMATCH</span></td></tr>`,
+        `<tr><td class="mono" data-label="Displays">${esc(link.text || "N/A")}</td><td class="mono" data-label="Actually goes to">${esc(link.href || "N/A")}</td><td><span class="risk-tag high">MISMATCH</span></td></tr>`,
     )
     .join("");
   const more =
@@ -850,22 +850,73 @@ export function renderHeaders(container, headers) {
       return `<tr><td class="header-name">${esc(row.key)}</td><td class="header-value mono">${esc(displayValue)}</td></tr>`;
     })
     .join("");
-  // Collapsed by default, as the spec asks: routed mail routinely carries 50+
+  // Original order: exactly as the message carries them. Each server prepends
+  // its own Received header, so reading them in place shows the real path —
+  // something the grouped view above cannot, since it collects repeats.
+  const ordered = headers.ordered || [];
+  const receivedTotal = ordered.filter((h) => /^received$/i.test(h.name)).length;
+  let receivedSeen = 0;
+  const orderedRows = ordered
+    .map((h, i) => {
+      const lower = h.name.toLowerCase();
+      let marker = "";
+      let cls = "";
+      if (lower === "received") {
+        receivedSeen++;
+        // First Received is the last hop (your server); the last one is where
+        // the message started.
+        const hop = receivedTotal - receivedSeen + 1;
+        marker = `<span class="hdr-tag">hop ${hop}${hop === 1 ? " · origin" : ""}${receivedSeen === 1 && receivedTotal > 1 ? " · last" : ""}</span>`;
+        cls = "hdr-received";
+      } else if (/^(authentication-results|received-spf|dkim-signature|arc-)/.test(lower)) {
+        cls = "hdr-auth";
+      }
+      return `<tr class="${cls}"><td class="header-index">${i + 1}</td><td class="header-name">${esc(h.name)}${marker}</td><td class="header-value mono">${esc(h.value)}</td></tr>`;
+    })
+    .join("");
+
+  // Both views are collapsed by default: routed mail routinely carries 50+
   // X-headers, and an expanded dump pushes every other panel off the screen.
-  container.innerHTML = `<details class="headers-details"><summary class="headers-summary">Show all ${rows.length} headers</summary><div class="headers-table-wrapper"><button class="btn-sm" id="copy-headers">Copy All Headers</button><div class="table-scroll headers-scroll"><table class="headers-table"><thead><tr><th>Header</th><th>Value</th></tr></thead><tbody>${tableRows}</tbody></table></div></div></details>`;
-  const copyBtn = container.querySelector("#copy-headers");
-  if (copyBtn) {
-    copyBtn.addEventListener("click", () => {
-      const raw = rows
-        .map(
-          (r) =>
-            `${r.key}: ${typeof r.value === "object" ? JSON.stringify(r.value) : r.value}`,
-        )
-        .join("\n");
-      navigator.clipboard.writeText(raw).then(() => {
-        copyBtn.textContent = "Copied!";
-        setTimeout(() => (copyBtn.textContent = "Copy All Headers"), 2000);
-      });
+  container.innerHTML = `<div class="headers-views">
+    <details class="headers-details">
+      <summary class="headers-summary">Key headers first <span class="headers-count">${rows.length} headers · important ones on top</span></summary>
+      <div class="headers-table-wrapper">
+        <div class="headers-toolbar"><button class="btn-sm" data-copy="grouped">Copy headers</button></div>
+        <div class="table-scroll headers-scroll"><table class="headers-table"><thead><tr><th>Header</th><th>Value</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+      </div>
+    </details>
+    <details class="headers-details">
+      <summary class="headers-summary">Original order <span class="headers-count">${ordered.length} headers · exactly as in the email</span></summary>
+      <div class="headers-table-wrapper">
+        <div class="headers-toolbar">
+          <p class="headers-note">Top to bottom as the message carries them. Every server adds its Received header above the previous one, so the chain reads bottom-up — the lowest Received header is where the message started.</p>
+          <button class="btn-sm" data-copy="raw">Copy raw headers</button>
+        </div>
+        <div class="table-scroll headers-scroll"><table class="headers-table headers-ordered"><thead><tr><th>#</th><th>Header</th><th>Value</th></tr></thead><tbody>${orderedRows}</tbody></table></div>
+      </div>
+    </details>
+  </div>`;
+
+  for (const btn of container.querySelectorAll("button[data-copy]")) {
+    btn.addEventListener("click", () => {
+      const text =
+        btn.dataset.copy === "raw"
+          ? // Byte-for-byte the original header block, folding included.
+            String(headers.raw || "").replace(/\s+$/, "")
+          : rows
+              .map((r) => `${r.key}: ${typeof r.value === "object" ? JSON.stringify(r.value) : r.value}`)
+              .join("\n");
+      const label = btn.textContent;
+      navigator.clipboard.writeText(text).then(
+        () => {
+          btn.textContent = "Copied!";
+          setTimeout(() => (btn.textContent = label), 2000);
+        },
+        () => {
+          btn.textContent = "Copy failed";
+          setTimeout(() => (btn.textContent = label), 2000);
+        },
+      );
     });
   }
 }

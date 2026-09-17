@@ -317,7 +317,7 @@ function deduplicateAndFlag(iocs) {
 
     if (parsed) {
       // Check for URL shortener
-      if (URL_SHORTENERS.some((s) => parsed.hostname.includes(s))) {
+      if (URL_SHORTENERS.some((s) => isDomainOrSubdomain(parsed.hostname, s))) {
         url.riskFlags.push({ type: "medium", label: "URL Shortener" });
         url.risks.push({
           type: "url-shortener",
@@ -523,5 +523,16 @@ function isDisposableDomain(domain) {
     "guerrillamail.info",
     "grr.la",
   ];
-  return disposableDomains.some((d) => domain && domain.includes(d));
+  return disposableDomains.some((d) => isDomainOrSubdomain(domain, d));
+}
+
+/**
+ * Exact domain or a subdomain of it. A substring test made "t.co" (Twitter's
+ * shortener) match "microsoft.com", "proofpoint.com" and every ".co.uk" host
+ * ending in "t", so ordinary links were scored as hidden destinations.
+ */
+function isDomainOrSubdomain(host, domain) {
+  if (!host || !domain) return false;
+  const h = String(host).toLowerCase().replace(/\.$/, "");
+  return h === domain || h.endsWith(`.${domain}`);
 }

@@ -120,7 +120,9 @@ body {
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 800px;
+  /* Capped to the viewport: a fixed 800px element widened the page on phones,
+     where body's overflow-x:hidden does not stop the viewport scrolling. */
+  width: min(800px, 100vw);
   height: 400px;
   background: radial-gradient(ellipse at center, rgba(159, 239, 0, 0.03) 0%, transparent 70%);
   pointer-events: none;
@@ -1820,7 +1822,8 @@ mark.highlight-credential {
 .table-scroll > table {
   min-width: 100%;
 }
-.ioc-table .ioc-value-cell {
+.ioc-table .ioc-value-cell,
+.ioc-table td.mono {
   max-width: 520px;
   word-break: break-all;
   overflow-wrap: anywhere;
@@ -2350,5 +2353,305 @@ mark.highlight-credential {
   .export-actions .btn {
     flex: 1;
     justify-content: center;
+  }
+}
+
+/* ===== HEADERS: two views ===== */
+.headers-views {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.headers-count {
+  margin-left: 0.5rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.headers-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.625rem;
+}
+.headers-toolbar .btn-sm {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.headers-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  max-width: 720px;
+}
+.headers-table .header-index {
+  width: 2.5rem;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  text-align: right;
+}
+.headers-ordered tr.hdr-received td:first-child {
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+.headers-ordered tr.hdr-auth td:first-child {
+  box-shadow: inset 3px 0 0 var(--purple);
+}
+.hdr-tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--blue);
+  background: var(--blue-bg);
+  white-space: nowrap;
+}
+
+/* ===== MOBILE =====
+   Measured at 375px with a realistic message: tables needed up to 810px of
+   sideways scrolling, nearly every button was under 36px tall, and around 80
+   labels rendered at 9–10px. */
+@media (max-width: 768px) {
+  /* --- Tables become stacked cards: no sideways scrolling on a phone --- */
+  .table-scroll {
+    overflow-x: visible;
+  }
+  .ioc-table,
+  .alignment-table,
+  .headers-table {
+    display: block;
+    width: 100%;
+    min-width: 0 !important;
+  }
+  .ioc-table thead,
+  .alignment-table thead,
+  .headers-table thead {
+    display: none;
+  }
+  .ioc-table tbody,
+  .ioc-table tr,
+  .ioc-table td,
+  .alignment-table tbody,
+  .alignment-table tr,
+  .alignment-table td,
+  .headers-table tbody,
+  .headers-table tr,
+  .headers-table td {
+    display: block;
+    width: 100%;
+    max-width: none;
+  }
+  .ioc-table tr:not(.lookup-result-row),
+  .alignment-table tr {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-elevated);
+    padding: 0.625rem 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .ioc-table td,
+  .alignment-table td {
+    border: 0 !important;
+    padding: 0.2rem 0 !important;
+    background: transparent !important;
+  }
+  .ioc-table tr:hover td,
+  .alignment-table tr:hover td,
+  .headers-table tr:hover td {
+    background: transparent;
+  }
+  .ioc-table td:empty {
+    display: none;
+  }
+  .ioc-table .ioc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    white-space: normal;
+    padding-top: 0.5rem !important;
+  }
+  .ioc-lookup-btns {
+    display: contents;
+  }
+  .ioc-table tr.lookup-result-row {
+    margin: -0.25rem 0 0.75rem;
+  }
+  .ioc-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-family: "Inter", sans-serif;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.15rem;
+  }
+  .align-side {
+    white-space: normal;
+  }
+  .align-op {
+    margin: 0 0.35rem;
+  }
+
+  /* Headers: name above value instead of a fixed 180px name column */
+  .headers-table tr {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .headers-table td {
+    border: 0 !important;
+    padding: 0.1rem 0.25rem !important;
+  }
+  .headers-table .header-name {
+    width: auto;
+    white-space: normal;
+  }
+  .headers-table .header-index {
+    display: none;
+  }
+  .headers-ordered tr.hdr-received,
+  .headers-ordered tr.hdr-auth {
+    padding-left: 0.5rem;
+  }
+  .headers-ordered tr.hdr-received {
+    box-shadow: inset 3px 0 0 var(--blue);
+  }
+  .headers-ordered tr.hdr-auth {
+    box-shadow: inset 3px 0 0 var(--purple);
+  }
+  .headers-ordered tr td:first-child {
+    box-shadow: none;
+  }
+  .headers-scroll {
+    max-height: 70vh;
+  }
+  .headers-toolbar {
+    flex-direction: column;
+  }
+  .headers-toolbar .btn-sm {
+    margin-left: 0;
+    width: 100%;
+  }
+  .headers-count {
+    display: block;
+    margin-left: 0;
+  }
+
+  /* --- Tap targets: at least 40px tall --- */
+  .btn,
+  .btn-sm,
+  .btn-ioc-lookup,
+  .btn-rescan,
+  .decode-btn,
+  .tab-btn,
+  .export-chip {
+    min-height: 40px;
+  }
+  .btn-close {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .btn-sm,
+  .btn-ioc-lookup,
+  .decode-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  .url-decode > summary,
+  .headers-details > .headers-summary {
+    padding-top: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+  .ip-actions {
+    width: 100%;
+  }
+  .ip-actions > * {
+    flex: 1;
+  }
+
+  /* --- Legible text: nothing below 11px --- */
+  small,
+  th,
+  .auth-badge-pill,
+  .ioc-count-label,
+  .score-label,
+  .spf-src-name,
+  .spf-src-result,
+  .mech-source,
+  .align-note,
+  .align-why,
+  .hop-tag,
+  .hdr-tag,
+  .decode-hint,
+  .risk-tag,
+  .hash-label,
+  .hash-val,
+  .att-meta,
+  .lang-phrase,
+  .lang-flags-section h4,
+  .export-chip small {
+    font-size: 11px;
+  }
+  .ioc-table .mono,
+  .header-value.mono,
+  .decode-output {
+    font-size: 12px;
+  }
+
+  /* --- Density --- */
+  .verdict-box {
+    padding: 1.25rem 1rem;
+  }
+  .modal-content {
+    width: calc(100% - 1.5rem);
+    max-height: calc(100vh - 1.5rem);
+  }
+  .received-hop {
+    padding: 0.625rem;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Icon-only Settings button so the title stays on one line */
+  #settings-btn .btn-label {
+    display: none;
+  }
+  #settings-btn {
+    min-width: 40px;
+    justify-content: center;
+    padding-left: 0.625rem;
+    padding-right: 0.625rem;
+  }
+  .app-header h1 {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .trust-banner {
+    font-size: 11px;
+    align-items: flex-start;
+  }
+}
+
+/* The URL cell breaks anywhere so long URLs fit; the decoder summary and its
+   hint are ordinary words and must not inherit that ("redirec / t"). */
+.url-decode > summary,
+.decode-hint,
+.decode-btn,
+.decode-note,
+.ioc-hashes .att-meta {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+@media (max-width: 768px) {
+  .decode-hint {
+    display: table;
+    margin: 0.35rem 0 0;
   }
 }

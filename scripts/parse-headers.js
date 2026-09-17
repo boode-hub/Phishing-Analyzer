@@ -15,6 +15,7 @@ export function parseHeaders(rawInput) {
   // Unfold and parse headers
   const unfolded = unfoldHeaders(headerSection);
   const headers = parseHeaderLines(unfolded);
+  const ordered = orderedHeaders(unfolded);
 
   // Extract specific headers (keys are lowercased with hyphens preserved)
   //
@@ -26,6 +27,10 @@ export function parseHeaders(rawInput) {
   const result = {
     raw: headerSection,
     all: headers,
+    // Every header exactly as it appeared, top to bottom, name case preserved.
+    // `all` is keyed by name, which groups repeats (all Received headers
+    // together) and loses the order the servers wrote them in.
+    ordered,
     from: extractAddress(first(headers.from)),
     replyTo: extractAddress(first(headers["reply-to"])),
     returnPath: extractAddress(first(headers["return-path"])),
@@ -112,6 +117,22 @@ function findHeaderBodyBoundary(input) {
  */
 function unfoldHeaders(headerSection) {
   return headerSection.replace(/\r?\n[ \t]+/g, " ");
+}
+
+/**
+ * Headers in their original order. A field name is printable ASCII with no
+ * spaces or colon (RFC 5322 §2.2), which keeps stray lines out of the list.
+ */
+function orderedHeaders(unfolded) {
+  const list = [];
+  for (const line of unfolded.split(/\r?\n/)) {
+    const colon = line.indexOf(":");
+    if (colon <= 0) continue;
+    const name = line.slice(0, colon);
+    if (!/^[\x21-\x39\x3b-\x7e]+$/.test(name)) continue;
+    list.push({ name, value: line.slice(colon + 1).trim() });
+  }
+  return list;
 }
 
 /**

@@ -51,7 +51,7 @@ node server.js
    - **Email Authentication** — SPF/DKIM/DMARC results and domain alignment
    - **Indicators of Compromise (IOCs)** — Extracted URLs, domains, IPs, emails, attachments
    - **Body & Language Analysis** — Plain text, HTML preview, and highlighted suspicious phrases
-   - **Email Headers** — Structured header table
+   - **Email Headers** — Two views: key headers first, and the original order exactly as in the email, with each Received header labelled by hop
 4. (Optional) Add VirusTotal/AbuseIPDB API keys in **Settings** to enable per-IOC enrichment
 
 ## Project Structure
@@ -166,6 +166,7 @@ node tests/ip.test.mjs           # IP validation, extraction, private ranges
 node tests/url-decode.test.mjs   # URL unwrapping and decoders
 node tests/links.test.mjs        # link/IOC extraction, summary and verdict rendering
 node tests/report.test.mjs       # report export: no live indicators, table/CSV integrity
+node tests/headers.test.mjs      # original header order view
 ```
 
 Attachment hashes are asserted against `node:crypto`, not against values this
