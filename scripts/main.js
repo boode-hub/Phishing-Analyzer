@@ -9,6 +9,7 @@ import { analyzeLanguage } from "./analyze-language.js";
 import { calculateScore } from "./score.js";
 import { sha256Bytes, md5Bytes } from "./hash-utils.js";
 import { isValidIP, isRoutableIP } from "./ip-utils.js";
+import { buildMarkdownReport, buildCsvReport, reportFilename } from "./report.js";
 import {
   renderVerdict,
   renderAuth,
@@ -92,6 +93,10 @@ function vtUrlId(value) {
 // four requests per minute, so re-clicking an IOC used to burn the quota.
 const lookupCache = new Map();
 
+// Plain-text summaries of completed lookups, keyed "vt:<value>" / "abuse:<value>",
+// so the exported report can include what the analyst already checked.
+const lookupResults = new Map();
+
 async function cachedLookup(key, fn) {
   if (lookupCache.has(key)) return lookupCache.get(key);
   const value = await fn();
@@ -125,6 +130,13 @@ function queryElements() {
     virustotalKeyInput: "virustotal-key",
     abuseipdbKeyInput: "abuseipdb-key",
     corsProxyUrlInput: "cors-proxy-url",
+    exportSection: "export-section",
+    exportMd: "export-md",
+    exportCsv: "export-csv",
+    exportRaw: "export-raw",
+    exportDownload: "export-download",
+    exportCopy: "export-copy",
+    exportStatus: "export-status",
     apiAvailability: "api-availability",
     proxyField: "proxy-field",
   };
@@ -200,6 +212,13 @@ function init() {
   });
 
   renderApiAvailability();
+
+  elements.exportDownload?.addEventListener("click", handleExportDownload);
+  elements.exportCopy?.addEventListener("click", handleExportCopy);
+  for (const box of [elements.exportMd, elements.exportCsv]) {
+    box?.addEventListener("change", syncExportControls);
+  }
+  syncExportControls();
 
   console.log("[Phishing Analyzer] Initialized successfully");
 }
@@ -399,9 +418,89 @@ function hideResults() {
     "ioc-section",
     "body-section",
     "headers-section",
+    "export-section",
   ]) {
     document.getElementById(id)?.classList.add("hidden");
   }
+}
+
+// ===== EXPORT =====
+
+/** Download needs at least one format; the raw-values option only applies to CSV. */
+function syncExportControls() {
+  const md = elements.exportMd?.checked;
+  const csv = elements.exportCsv?.checked;
+  if (elements.exportDownload) elements.exportDownload.disabled = !md && !csv;
+  if (elements.exportRaw) {
+    elements.exportRaw.disabled = !csv;
+    elements.exportRaw.closest("label")?.classList.toggle("disabled", !csv);
+  }
+}
+
+function exportStatus(message, type = "ok") {
+  const el = elements.exportStatus;
+  if (!el) return;
+  el.textContent = message;
+  el.className = `export-status ${type}`;
+  clearTimeout(exportStatus.timer);
+  exportStatus.timer = setTimeout(() => (el.textContent = ""), 4000);
+}
+
+function handleExportDownload() {
+  if (!currentAnalysis) return;
+  const now = new Date();
+  const files = [];
+
+  if (elements.exportMd?.checked) {
+    files.push({
+      name: reportFilename(currentAnalysis, "md", now),
+      type: "text/markdown;charset=utf-8",
+      content: buildMarkdownReport(currentAnalysis, { lookups: lookupResults, now }),
+    });
+  }
+  if (elements.exportCsv?.checked) {
+    files.push({
+      name: reportFilename(currentAnalysis, "csv", now),
+      type: "text/csv;charset=utf-8",
+      content: buildCsvReport(currentAnalysis, {
+        lookups: lookupResults,
+        includeRaw: !!elements.exportRaw?.checked,
+      }),
+    });
+  }
+  if (!files.length) return;
+
+  // Browsers can drop a second download triggered in the same tick; a short
+  // gap lets both through.
+  files.forEach((f, i) => setTimeout(() => downloadFile(f), i * 350));
+  exportStatus(
+    files.length === 2
+      ? "Downloaded Markdown and CSV reports."
+      : `Downloaded ${files[0].name}`,
+  );
+}
+
+async function handleExportCopy() {
+  if (!currentAnalysis) return;
+  try {
+    await navigator.clipboard.writeText(
+      buildMarkdownReport(currentAnalysis, { lookups: lookupResults }),
+    );
+    exportStatus("Markdown report copied to the clipboard.");
+  } catch {
+    exportStatus("Could not access the clipboard — use Download instead.", "error");
+  }
+}
+
+function downloadFile({ name, type, content }) {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // Handle File Upload
@@ -531,6 +630,8 @@ async function renderResults(analysis) {
   const headersContent = document.getElementById("headers-content");
   if (headersSection) headersSection.classList.remove("hidden");
   if (headersContent) renderHeaders(headersContent, analysis.headers);
+
+  document.getElementById("export-section")?.classList.remove("hidden");
 }
 
 // Show Status Message
@@ -765,6 +866,13 @@ async function lookupVirusTotal(btn) {
           ? "lookup-suspicious"
           : "lookup-clean";
 
+    const engines =
+      malicious + suspicious + (stats.harmless || 0) + (stats.undetected || 0);
+    lookupResults.set(
+      `vt:${value}`,
+      `${malicious > 0 ? "Malicious" : suspicious > 0 ? "Suspicious" : "Clean"} — ${malicious + suspicious}/${engines} engines flagged`,
+    );
+
     // Build type-specific display.
     // The rescan path is spelled "analyse": VirusTotal v3 uses the British
     // spelling, so every "/analyze" request returned 404.
@@ -948,6 +1056,18 @@ async function lookupAbuseIPDB(btn) {
         : score >= 25
           ? "lookup-suspicious"
           : "lookup-clean";
+
+    lookupResults.set(
+      `abuse:${ip}`,
+      [
+        `${score}% abuse confidence`,
+        `${attrs.totalReports || 0} reports`,
+        attrs.countryCode,
+        attrs.isp,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    );
 
     resultContent.innerHTML = `
       <div class="lookup-result abuse-result">

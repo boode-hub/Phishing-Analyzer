@@ -90,6 +90,30 @@
         <div id="input-status" class="status-message"></div>
       </section>
 
+      <!-- Export: sits directly above the results it exports -->
+      <section id="export-section" class="export-bar hidden" aria-label="Export report">
+        <div class="export-info">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <div>
+            <div class="export-title">Export IOC report</div>
+            <div class="export-subtitle">All indicators defanged · generated locally · includes any lookups you ran</div>
+          </div>
+        </div>
+        <div class="export-controls">
+          <fieldset class="export-formats">
+            <legend class="visually-hidden">Formats</legend>
+            <label class="export-chip"><input type="checkbox" id="export-md" checked /><span>Markdown</span><small>.md</small></label>
+            <label class="export-chip"><input type="checkbox" id="export-csv" checked /><span>CSV</span><small>.csv</small></label>
+          </fieldset>
+          <label class="export-raw" title="Adds an indicator_raw column with the original, live values — for importing into tooling"><input type="checkbox" id="export-raw" /> Raw values column in CSV</label>
+          <div class="export-actions">
+            <button id="export-copy" class="btn btn-secondary" type="button">Copy Markdown</button>
+            <button id="export-download" class="btn btn-primary" type="button">Download</button>
+          </div>
+        </div>
+        <div id="export-status" class="export-status" role="status" aria-live="polite"></div>
+      </section>
+
       <!-- Quick Summary -->
       <section id="summary-section" class="panel hidden">
         <h2>Quick Summary</h2>

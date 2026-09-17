@@ -2216,3 +2216,139 @@ mark.highlight-credential {
   font-size: 11px;
   color: var(--text-muted);
 }
+
+/* ===== EXPORT BAR ===== */
+.export-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.875rem 1.5rem;
+  padding: 0.875rem 1.25rem;
+  margin-bottom: 1rem;
+  background: var(--bg-base);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 0 1px transparent, 0 0 24px var(--accent-glow);
+}
+.export-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--accent);
+  min-width: 0;
+}
+.export-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.export-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.export-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem 1rem;
+}
+.export-formats {
+  display: flex;
+  gap: 0.5rem;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.export-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--transition);
+}
+.export-chip small {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.export-chip input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.export-chip:has(input:checked) {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+.export-chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.export-raw {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.export-raw input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.export-raw.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.export-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.export-actions .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.export-status {
+  flex-basis: 100%;
+  font-size: 11px;
+  min-height: 0;
+}
+.export-status:empty {
+  display: none;
+}
+.export-status.ok {
+  color: var(--accent);
+}
+.export-status.error {
+  color: var(--red);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (max-width: 768px) {
+  .export-controls,
+  .export-actions {
+    width: 100%;
+  }
+  .export-actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}

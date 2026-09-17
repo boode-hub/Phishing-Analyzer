@@ -20,6 +20,7 @@ A fully client-side web application that analyzes suspicious emails for phishing
 - **VirusTotal Integration** — Optional per-IOC lookup for URLs, domains, IPs, and file hashes (requires your own API key)
 - **AbuseIPDB Integration** — Optional per-IOC IP reputation lookup (requires your own API key)
 - **Defang/Copy** — One-click defanging for safe sharing, and copy-to-clipboard for any IOC
+- **IOC Report Export** — Download a Markdown report (for tickets, chat and email) and/or a CSV (for SIEMs, blocklists and spreadsheets), or copy the Markdown straight to the clipboard. Every indicator is defanged, hashes are left intact, and any VirusTotal/AbuseIPDB lookups already run are included. The CSV guards against spreadsheet formula injection and can optionally carry a raw-values column for tooling
 
 ## Privacy
 
@@ -68,6 +69,7 @@ node server.js
 │   ├── parse-body.js       # MIME tree parsing, links, remote resources
 │   ├── extract-iocs.js     # IOC extraction + risk flagging
 │   ├── url-decode.js       # URL unwrapping and decoders
+│   ├── report.js           # Markdown/CSV report export and defanging
 │   ├── ip-utils.js         # IP validation and extraction
 │   ├── analyze-language.js # Urgency/fraud keyword scoring
 │   ├── score.js            # Composite verdict scoring
@@ -163,6 +165,7 @@ node tests/attachments.test.mjs  # MIME extraction + file hashing
 node tests/ip.test.mjs           # IP validation, extraction, private ranges
 node tests/url-decode.test.mjs   # URL unwrapping and decoders
 node tests/links.test.mjs        # link/IOC extraction, summary and verdict rendering
+node tests/report.test.mjs       # report export: no live indicators, table/CSV integrity
 ```
 
 Attachment hashes are asserted against `node:crypto`, not against values this
