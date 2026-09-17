@@ -8,7 +8,7 @@ import { parseBody } from "./parse-body.js";
 import { extractIOCs } from "./extract-iocs.js";
 import { analyzeLanguage } from "./analyze-language.js";
 import { calculateScore } from "./score.js";
-import { sha256Bytes, md5Bytes } from "./hash-utils.js";
+import { sha256, sha256Bytes, md5Bytes } from "./hash-utils.js";
 import { isValidIP, isRoutableIP } from "./ip-utils.js";
 import { buildHtmlReport, buildCsvReport, reportFilename } from "./report.js";
 import {
