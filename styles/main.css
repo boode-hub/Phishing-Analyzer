@@ -124,7 +124,7 @@ body {
      where body's overflow-x:hidden does not stop the viewport scrolling. */
   width: min(800px, 100vw);
   height: 400px;
-  background: radial-gradient(ellipse at center, rgba(159, 239, 0, 0.03) 0%, transparent 70%);
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--accent) 3%, transparent) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -174,6 +174,7 @@ body {
 }
 /* The logo takes the place of the old ">" prompt mark. */
 .app-logo {
+  color: var(--accent);
   width: 30px;
   height: 30px;
   flex-shrink: 0;
@@ -321,7 +322,7 @@ input[type="file"]::file-selector-button:hover {
 }
 .btn-primary {
   background: var(--accent);
-  color: #0d1117;
+  color: var(--accent-contrast, #0d1117);
   border-color: var(--accent);
 }
 .btn-primary:hover {
@@ -1612,7 +1613,7 @@ mark.highlight-credential {
   font-family: "Inter", sans-serif;
 }
 .btn-rescan:hover {
-  background: rgba(159, 239, 0, 0.15);
+  background: var(--accent-glow);
   border-color: var(--accent);
   box-shadow: 0 0 10px var(--accent-glow);
 }
@@ -1737,6 +1738,24 @@ mark.highlight-credential {
 }
 .setting-field small a:hover {
   text-decoration: underline;
+}
+.theme-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.setting-field .theme-row input[type="color"] {
+  width: 44px;
+  height: 36px;
+  padding: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.theme-row code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 5.5em;
 }
 .setting-actions {
   display: flex;
@@ -1887,7 +1906,7 @@ mark.highlight-credential {
   color: var(--text-muted);
 }
 .align-verdict.verified {
-  color: #22c55e;
+  color: var(--green);
 }
 .align-verdict.malicious {
   color: #ef4444;
@@ -2050,8 +2069,8 @@ mark.highlight-credential {
   font-family: "JetBrains Mono", monospace;
 }
 .api-notice.ok {
-  border-left-color: #22c55e;
-  background: rgba(34, 197, 94, 0.08);
+  border-left-color: var(--green);
+  background: var(--green-bg);
 }
 
 /* Shown in place of lookup buttons for an address no reputation service can
@@ -2117,7 +2136,7 @@ mark.highlight-credential {
   margin-top: 0.5rem;
   overflow-wrap: anywhere;
 }
-.spf-verdict.ok { color: #22c55e; }
+.spf-verdict.ok { color: var(--green); }
 .spf-verdict.bad { color: #f59e0b; font-weight: 600; }
 
 /* ===== Alignment: spelled-out comparison ===== */
@@ -2195,13 +2214,13 @@ mark.highlight-credential {
   color: var(--text);
 }
 .decode-btn.applies {
-  border-color: rgba(159, 239, 0, 0.5);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
   color: var(--accent);
 }
 .decode-btn.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #000;
+  color: var(--accent-contrast, #000);
 }
 .decode-result {
   margin-top: 0.625rem;

@@ -410,7 +410,7 @@ export function renderVerdict(c, sc, langAnalysis) {
 // "temperror" are distinct states now, and each needs to read differently from
 // a clean pass and from an outright failure.
 const STATUS_STYLES = {
-  pass: { cls: "pass", color: "#22c55e" },
+  pass: { cls: "pass", color: "var(--green)" },
   fail: { cls: "fail", color: "#ef4444" },
   softfail: { cls: "softfail", color: "#f59e0b" },
   permerror: { cls: "softfail", color: "#f59e0b" },

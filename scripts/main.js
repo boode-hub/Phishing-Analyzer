@@ -2,6 +2,7 @@
 // Phishing Email Analyzer - Local Browser-Based
 
 import { parseHeaders } from "./parse-headers.js";
+import { applyAccent, loadAccent, saveAccent, DEFAULT_ACCENT } from "./theme.js";
 import { parseAuth } from "./parse-auth.js";
 import { parseBody } from "./parse-body.js";
 import { extractIOCs } from "./extract-iocs.js";
@@ -104,6 +105,9 @@ async function cachedLookup(key, fn) {
   return value;
 }
 
+// Apply the saved theme colour before anything renders.
+applyAccent(loadAccent());
+
 // Safely get localStorage value
 try {
   apiKeys.virustotal = localStorage.getItem("vt-api-key") || "";
@@ -138,6 +142,9 @@ function queryElements() {
     exportStatus: "export-status",
     apiAvailability: "api-availability",
     proxyField: "proxy-field",
+    accentColor: "accent-color",
+    accentValue: "accent-value",
+    resetAccent: "reset-accent",
   };
   for (const [key, id] of Object.entries(ids)) {
     elements[key] = document.getElementById(id);
@@ -211,6 +218,7 @@ function init() {
   });
 
   renderApiAvailability();
+  setupThemePicker();
 
   elements.exportDownload?.addEventListener("click", handleExportDownload);
   for (const box of [elements.exportHtml, elements.exportCsv]) {
@@ -514,6 +522,25 @@ function handleFileUpload(e) {
     showStatus("Error reading file", "error");
   };
   reader.readAsText(file);
+}
+
+// Theme colour: live preview while picking, saved on every change.
+function setupThemePicker() {
+  const { accentColor, accentValue, resetAccent } = elements;
+  if (!accentColor) return;
+  const show = (hex) => {
+    accentColor.value = hex;
+    if (accentValue) accentValue.textContent = hex;
+  };
+  show(loadAccent());
+  accentColor.addEventListener("input", () => {
+    show(applyAccent(accentColor.value));
+    saveAccent(accentColor.value);
+  });
+  resetAccent?.addEventListener("click", () => {
+    show(applyAccent(DEFAULT_ACCENT));
+    saveAccent(DEFAULT_ACCENT);
+  });
 }
 
 // Handle Save Settings
