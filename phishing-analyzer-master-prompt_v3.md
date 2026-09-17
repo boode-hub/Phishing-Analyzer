@@ -1,5 +1,15 @@
 # Master Build Prompt v3: Phishing Email Analyzer
 
+> **Note for this copy of the project.** This document describes the original
+> app. This working copy goes further: a strict Content-Security-Policy with no
+> inline handlers, self-hosted fonts, a loopback-only server, an allow-listed
+> relay, optional in-memory API keys, sender-identity and lookalike-domain
+> analysis, link-shape flags, attachment content sniffing, ARC, header
+> anomalies, pattern-based BEC detection with a Suspicious floor, local DNS and
+> WHOIS, JSON export, copy-all-indicators and batch analysis. The README
+> documents all of it, and `tests/security.test.mjs` and
+> `tests/detection.test.mjs` cover it.
+
 > Give this whole document to an AI coding assistant (Claude, GPT, or similar) as the task. It describes the finished product as it exists at `boode-hub/Phishing-Analyzer`: every module, rule, constant, UI panel, security control, and test the app depends on. Build it exactly as written. Where this document gives a list, a number, or a message, use it word for word.
 >
 > v2 (`phishing-analyzer-master-prompt_v2.md`) is the original, superseded spec. v3 records every accuracy fix and feature added since.

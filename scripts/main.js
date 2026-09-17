@@ -262,7 +262,9 @@ function renderApiAvailability() {
       "<strong>Lookups are ready.</strong> This page is served by " +
       "<code>server.js</code>, which relays VirusTotal and AbuseIPDB calls for " +
       "you. Paste your API keys below and the lookup buttons will work — no " +
-      "proxy setup, no other configuration.";
+      "proxy setup, no other configuration.<br><br>DNS and WHOIS lookups also " +
+      "run here, resolved by this machine with no API key and no third-party " +
+      "service.";
     if (elements.proxyField) elements.proxyField.classList.add("hidden");
     return;
   }

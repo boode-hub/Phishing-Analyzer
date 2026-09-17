@@ -18,12 +18,15 @@ All analysis runs locally in your browser. Nothing is uploaded; the only data th
 - [How to use it](#how-to-use-it)
 - [Features](#features)
   - [Quick Summary](#quick-summary)
+  - [Sender identity](#sender-identity)
   - [Verdict and scoring](#verdict-and-scoring)
   - [Email authentication](#email-authentication)
   - [Sender IP and route](#sender-ip-and-route)
   - [Indicators of compromise](#indicators-of-compromise)
   - [URL decoders](#url-decoders)
   - [Attachments and file hashes](#attachments-and-file-hashes)
+  - [Live DNS and WHOIS](#live-dns-and-whois)
+  - [Batch analysis](#batch-analysis)
   - [Language analysis](#language-analysis)
   - [Body preview](#body-preview)
   - [Email headers](#email-headers)
@@ -31,6 +34,7 @@ All analysis runs locally in your browser. Nothing is uploaded; the only data th
   - [VirusTotal and AbuseIPDB lookups](#virustotal-and-abuseipdb-lookups)
   - [Theme colour](#theme-colour)
   - [Mobile](#mobile)
+- [Security of the tool itself](#security-of-the-tool-itself)
 - [Privacy and security](#privacy-and-security)
 - [How it works](#how-it-works)
 - [Project structure](#project-structure)
@@ -46,9 +50,13 @@ All analysis runs locally in your browser. Nothing is uploaded; the only data th
 - **Authentication done the way receiving servers do it** — SPF, DKIM and DMARC read from the header your own mail server wrote, forged headers flagged, and DMARC-style domain alignment explained in plain terms.
 - **Finds what the link is hiding** — unwraps Microsoft Safe Links, Proofpoint and open redirects, decodes Base64, punycode and more, and analyses the real destination as an indicator of its own.
 - **Every indicator in one place** — URLs (including tracking pixels), domains, IPs, email addresses, attachments and inline images with SHA-256/MD5, and deceptive links.
-- **Reads the wording** — urgency, fear, financial fraud, credential harvesting, and Business Email Compromise / payment fraud.
+- **Checks who it claims to be** — display names that carry another address or a brand they do not own, lookalike and mixed-alphabet sending domains, and replies pointed at free webmail.
+- **Looks inside attachments** — the real file type from its first bytes, so "Invoice.pdf" that is actually a program is caught, along with HTML smuggling.
+- **Reads the wording** — urgency, fear, financial fraud, credential harvesting, and Business Email Compromise / payment fraud, matched by pattern as well as by phrase.
+- **Asks your own machine, not a service** — live DNS (SPF, DMARC, MX) and WHOIS/registration for every domain and IP, resolved locally with no API key.
 - **A verdict you can explain** — every point of the score has a reason, and the tool says when the evidence is too thin to trust a low score.
-- **Report in one click** — a styled, self-contained HTML report and/or a CSV, with every indicator defanged.
+- **Report in one click** — a styled, self-contained HTML report, a CSV and a JSON file for tooling, with every indicator defanged, plus a one-click copy of all indicators.
+- **A whole batch at once** — select many files and every message is scored and listed worst first.
 - **Private by design** — no uploads, no tracking, and the message's own HTML preview cannot phone home.
 - **Works on phones.**
 
@@ -235,6 +243,31 @@ Phrases are matched as **whole words** (so "first" never matches "IRS", nor "cou
 - **Plain text** view with suspicious phrases highlighted.
 - **HTML preview** in a fully sandboxed frame with a content security policy that blocks every remote request — the message's tracking pixels and remote images do not load, so opening the preview never tells the sender you looked.
 
+### Sender identity
+
+Authentication answers "did this domain really send it". It cannot answer "is this domain who the reader thinks it is" — and most real phishing passes every check. The **Sender identity** card appears directly under the verdict whenever any of these hold:
+
+- the display name carries a different address than the real sender (`"PayPal Service <service@paypal.com>" <attacker@gmail.com>`);
+- the display name claims a brand the sending domain does not belong to;
+- the sending domain imitates a brand — `paypa1.com` (reads the same), `micorsoft.com` (one edit away), or `paypal.secure-login.test` (the brand used as a word);
+- a domain label mixes Latin with Cyrillic or Greek letters, which is how lookalike domains are built;
+- replies would go to a personal webmail account on another domain.
+
+The same lookalike check runs over every link, so a link to `paypa1-verify.com` is flagged even when its text is innocent. Links are also flagged for embedded credentials (`https://accounts.paypal.com@evil.test`), `javascript:` and `data:` schemes, non-standard ports, direct downloads of programs or archives, and heavily abused domain endings such as `.zip`.
+
+### Live DNS and WHOIS
+
+Both run **on your own machine**, through the app's server (`node server.js`). No third-party API, no key, and nothing about the message is sent anywhere.
+
+- **WHOIS & registration** sits under every domain and IP, and under the sender's IP in the summary. It shows the registrar or network owner, the registrant, country, name servers, status and the abuse contact — with a badge when a domain was **registered days ago**, which is the most reliable sign of a throwaway phishing domain. An unregistered domain is reported as such.
+- **Published policy** in the Authentication panel resolves what the From domain publishes right now: its SPF record and whether it ends in `-all` or only `~all`, its DMARC policy (`p=reject`, `p=quarantine` or the decorative `p=none`), and its MX records — a domain with no MX is not set up to receive mail at all.
+
+RDAP is used where registries support it, with classic WHOIS on port 43 as the fallback. On a hosted copy there is no local server, and the panels say so instead of failing quietly.
+
+### Batch analysis
+
+Select several files in the upload box and every message is parsed, scored and listed **worst first**, with its verdict, sender and subject. Clicking **Open** loads that message into the full view. Everything stays local, and one bad message in a wave of twenty does not get missed.
+
 ### Email headers
 
 The **Email Headers** panel has two collapsible views:
@@ -244,7 +277,7 @@ The **Email Headers** panel has two collapsible views:
 
 ### Report export
 
-The **Export IOC report** bar above the results downloads either format or both.
+The **Export IOC report** bar above the results downloads any combination of the three formats, and **Copy IOCs** puts every indicator on the clipboard (defanged, or raw for tooling).
 
 **HTML report** — a single self-contained file in the app's own design:
 
@@ -332,6 +365,20 @@ The whole app is usable on a phone:
 
 ---
 
+## Security of the tool itself
+
+The app parses hostile input, so it is built to stay harmless even if the parsing is wrong:
+
+- A strict **Content-Security-Policy**: `default-src 'self'`, `script-src 'self'` with no `unsafe-inline`, and `object-src`, `base-uri` and `form-action` set to `'none'`. An escaping mistake cannot become code execution.
+- **No inline event handlers anywhere.** Every result button carries a `data-act` attribute and is handled by one delegated listener; nothing is exposed on `window`.
+- **Fonts ship with the app.** Nothing is fetched from Google or any other third party at load time.
+- **The local server binds `127.0.0.1` only**, so the analyzer and its API relay are not reachable from the rest of the network.
+- **The optional Cloudflare relay forwards to VirusTotal and AbuseIPDB over HTTPS only** — without that allow-list, anyone who learned the worker URL could route their own traffic through your account.
+- **API keys do not have to be stored.** Settings can keep them in memory for the tab instead of in this browser's storage.
+- The message's own HTML is previewed in a sandboxed frame with its own blocking policy, and exported reports carry `default-src 'none'` and no script.
+
+`tests/security.test.mjs` checks each of these, so none of them can be lost by accident.
+
 ## Privacy and security
 
 **What leaves your machine**
@@ -397,7 +444,11 @@ Raw email
 │   ├── render.js               Rendering for every panel
 │   ├── report.js               HTML / CSV report export and defanging
 │   ├── hash-utils.js           Byte-accurate SHA-256 and MD5
+│   ├── analyze-identity.js     Display-name and lookalike-domain analysis
+│   ├── file-type.js            Attachment content sniffing and HTML smuggling
 │   └── theme.js                Accent colour picker palette
+├── lookup-local.js             DNS and WHOIS/RDAP performed by this machine
+├── fonts/                      Self-hosted Inter and JetBrains Mono
 ├── tests/                      Test suites (see below)
 ├── sample-data/                Example .eml files
 ├── server.js                   Local server and API relay
@@ -425,6 +476,8 @@ node tests/report.test.mjs       # report export: defanging, safety, well-formed
 node tests/headers.test.mjs      # original header order view
 node tests/language.test.mjs     # whole-word matching, BEC / payment-fraud phrases
 node tests/theme.test.mjs        # accent colour palette, apply and reset
+node tests/security.test.mjs     # CSP, no inline handlers, no third-party assets, relay allow-list
+node tests/detection.test.mjs    # identity, link shapes, file content, ARC, anomalies, BEC floor
 node tests/imports.test.mjs      # every cross-module call is imported
 ```
 
@@ -439,9 +492,11 @@ node tests/imports.test.mjs      # every cross-module call is imported
 | attachments | 9 |
 | language | 7 |
 | headers | 6 |
+| detection | 23 |
+| security | 9 |
 | theme | 3 |
 | imports | 1 |
-| **Total** | **241** |
+| **Total** | **273** |
 
 **Deployment:** every push to `master` runs all suites in GitHub Actions and deploys to GitHub Pages only if they pass. A broken build never reaches the live site. After a deploy, browsers may keep the previous version for a few minutes — press **Ctrl+F5** to load the latest.
 
