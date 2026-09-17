@@ -35,6 +35,7 @@ cd Phishing-Analyzer
 node server.js
 
 # Open http://localhost:8080 in your browser
+# Port taken or refused (Windows reserves some ranges)? PORT=3000 node server.js
 ```
 
 ## Usage

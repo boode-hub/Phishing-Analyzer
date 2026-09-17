@@ -314,6 +314,48 @@ function statusStyle(s) {
   return STATUS_STYLES[s] || STATUS_STYLES.unknown;
 }
 
+/**
+ * Both SPF headers side by side, with the IP each evaluated, whether they
+ * agree, and how that IP relates to the sender's public IP.
+ */
+function renderSpfSources(spf) {
+  const rows = spf.sources
+    .map((s) => {
+      const { color } = statusStyle(s.status);
+      return `<div class="spf-src">
+        <div class="spf-src-head"><span class="spf-src-name">${esc(s.header)}</span><span class="spf-src-result" style="color:${color}">${esc((s.rawResult || s.status).toUpperCase())}</span></div>
+        <div class="spf-src-line">IP <span class="mono">${esc(s.ip || "not recorded")}</span></div>
+        ${s.identity ? `<div class="spf-src-line">for <span class="mono">${esc(s.identity)}</span></div>` : ""}
+      </div>`;
+    })
+    .join("");
+
+  let agreement;
+  if (spf.sources.length < 2) {
+    agreement = `<div class="spf-verdict muted">Only ${esc(spf.sources[0].header)} is present — nothing to cross-check.</div>`;
+  } else if (spf.resultsAgree && spf.ipsAgree !== false) {
+    agreement = `<div class="spf-verdict ok">✓ Both headers agree${spf.ip ? ` on <span class="mono">${esc(spf.ip)}</span>` : ""}</div>`;
+  } else {
+    const parts = [];
+    if (spf.resultsAgree === false) parts.push("results differ");
+    if (spf.ipsAgree === false) parts.push("checked different IPs");
+    agreement = `<div class="spf-verdict bad">⚠ Headers disagree — ${parts.join(" and ")}. Authentication-Results decides the status above.</div>`;
+  }
+
+  let sender = "";
+  if (spf.senderPublicIp) {
+    const rel =
+      spf.matchesSenderIp === true
+        ? '<span class="verified">✓ same IP SPF checked</span>'
+        : spf.matchesSenderIp === false
+          ? '<span class="muted">≠ SPF checked a relay, not the origin (normal for ESPs and forwarding)</span>'
+          : "";
+    sender = `<div class="spf-sender">Sender public IP <span class="mono">${esc(spf.senderPublicIp)}</span> ${rel}</div>`;
+  }
+
+  return `<div class="spf-sources">${rows}</div>${agreement}${sender}`;
+}
+
 // ===== AUTHENTICATION =====
 export function renderAuth(c, auth) {
   if (!auth) {
@@ -329,29 +371,50 @@ export function renderAuth(c, auth) {
     .map(([n, r]) => {
       const s = r.status || "none";
       const { cls, color } = statusStyle(s);
-      return `<div class="auth-mech ${cls}" style="border-left:4px solid ${color}"><div class="mech-name">${esc(n.toUpperCase())}</div><div class="mech-status" style="color:${color};font-weight:700">${esc(s.toUpperCase())}</div>${r.details ? `<div class="mech-details">${esc(r.details)}</div>` : ""}${r.source ? `<div class="mech-source">via ${esc(r.source)}</div>` : ""}</div>`;
+      // SPF gets a per-header breakdown: its two headers can disagree, and
+      // showing only the winner hides exactly the case worth seeing.
+      const body =
+        n === "spf" && auth.spf?.sources?.length
+          ? renderSpfSources(auth.spf)
+          : `${r.details ? `<div class="mech-details">${esc(r.details)}</div>` : ""}${r.source ? `<div class="mech-source">via ${esc(r.source)}</div>` : ""}`;
+      return `<div class="auth-mech ${cls}" style="border-left:4px solid ${color}"><div class="mech-name">${esc(n.toUpperCase())}</div><div class="mech-status" style="color:${color};font-weight:700">${esc(s.toUpperCase())}</div>${body}</div>`;
     })
     .join("");
 
-  // Alignment rows come from the analysed entries, which know whether each
-  // source is a DMARC input and whether it matched strictly or on the
-  // organizational domain. Reply-To is shown but marked as informational,
-  // because it is not part of DMARC and a mismatch there is not a failure.
+  // Each row spells the comparison out — "Return-Path (x) = From (y)" — and
+  // says why it did or did not align, rather than a bare ALIGNED/MISMATCH.
   const fromDomain = align.fromDomain;
-  const alignRows = [
-    fromDomain
-      ? `<tr><td>From</td><td class="mono">${esc(fromDomain)}</td><td class="muted">baseline</td></tr>`
-      : "",
-    ...(align.entries || []).map((e) => {
-      const status = !e.dmarcRelevant
-        ? `<span class="muted">${e.aligned ? "same domain" : "differs (not a DMARC input)"}</span>`
-        : e.aligned
-          ? `<span class="verified">✓ ALIGNED (${esc(e.mode)})</span>`
-          : `<span class="malicious">✗ MISMATCH</span>`;
+  const alignRows = (align.entries || [])
+    .map((e) => {
+      const check = e.source.startsWith("DKIM")
+        ? `DKIM<div class="align-note">signing domain vs From</div>`
+        : e.source === "Return-Path"
+          ? `SPF<div class="align-note">envelope sender vs From</div>`
+          : `${esc(e.source)}<div class="align-note">not a DMARC input</div>`;
+
+      const comparison = `<span class="align-side">${esc(e.source)} <span class="mono">(${esc(e.domain)})</span></span><span class="align-op">${e.aligned ? "=" : "≠"}</span><span class="align-side">From <span class="mono">(${esc(fromDomain || "none")})</span></span>`;
+
+      let result;
+      if (!fromDomain) {
+        result = '<span class="muted">No From domain to compare</span>';
+      } else if (e.strict) {
+        result = `<span class="verified">✓ ALIGNED</span><div class="align-why">strict — identical domains</div>`;
+      } else if (e.relaxed) {
+        result = `<span class="verified">✓ ALIGNED</span><div class="align-why">relaxed — both under <span class="mono">${esc(e.orgDomain)}</span></div>`;
+      } else {
+        result = `<span class="${e.dmarcRelevant ? "malicious" : "muted"}">✗ NOT ALIGNED</span><div class="align-why">organizational domains differ: <span class="mono">${esc(e.orgDomain || "?")}</span> ≠ <span class="mono">${esc(align.fromOrgDomain || "?")}</span></div>`;
+      }
+
+      // Alignment only counts toward DMARC if the mechanism itself passed.
+      if (e.dmarcRelevant && e.aligned && !e.mechanismPassed) {
+        const mech = e.source === "Return-Path" ? "SPF" : "DKIM";
+        result += `<div class="align-why warn">but ${mech} did not pass, so this does not satisfy DMARC</div>`;
+      }
+
       const cls = e.dmarcRelevant && !e.aligned ? "mismatch-row" : "";
-      return `<tr class="${cls}"><td>${esc(e.source)}<div class="align-note">${esc(e.note || "")}</div></td><td class="mono">${esc(e.domain)}</td><td>${status}</td></tr>`;
-    }),
-  ].join("");
+      return `<tr class="${cls}"><td>${check}</td><td class="align-compare">${comparison}</td><td>${result}</td></tr>`;
+    })
+    .join("");
 
   const verdict =
     align.dmarcAligned === true
@@ -379,7 +442,7 @@ export function renderAuth(c, auth) {
     ? `<p class="auth-source-note">Results reported by <span class="mono">${esc(auth.trust.authservId)}</span>${auth.trust.authResultsCount > 1 ? ` — ${auth.trust.authResultsCount} Authentication-Results headers present, only the topmost is trusted.` : "."}</p>`
     : "";
 
-  c.innerHTML = `<div class="auth-section"><h3>Mechanism Results</h3>${sourceNote}<div class="auth-mechanisms">${mechHtml || "<p>No auth data</p>"}</div></div>${trustHtml}<div class="auth-section"><h3>Domain Alignment</h3>${verdict}<div class="table-scroll"><table class="alignment-table"><thead><tr><th>Source</th><th>Domain</th><th>Status</th></tr></thead><tbody>${alignRows || '<tr><td colspan="3">No alignment data</td></tr>'}</tbody></table></div></div><div class="auth-section"><h3>Received Chain</h3><div class="received-chain">${recvHtml || "<p>No received chain data</p>"}</div></div>`;
+  c.innerHTML = `<div class="auth-section"><h3>Mechanism Results</h3>${sourceNote}<div class="auth-mechanisms">${mechHtml || "<p>No auth data</p>"}</div></div>${trustHtml}<div class="auth-section"><h3>Domain Alignment</h3>${verdict}<div class="table-scroll"><table class="alignment-table"><thead><tr><th>Check</th><th>Comparison</th><th>Result</th></tr></thead><tbody>${alignRows || '<tr><td colspan="3">No alignment data</td></tr>'}</tbody></table></div></div><div class="auth-section"><h3>Received Chain</h3><div class="received-chain">${recvHtml || "<p>No received chain data</p>"}</div></div>`;
 }
 
 // ===== IOCS =====

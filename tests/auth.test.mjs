@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { parseHeaders } from "../scripts/parse-headers.js";
 import { parseAuth, orgDomain } from "../scripts/parse-auth.js";
 import { calculateScore } from "../scripts/score.js";
+import { renderAuth } from "../scripts/render.js";
 
 let passed = 0;
 const failures = [];
@@ -155,6 +156,132 @@ From: x@example.com
 
 body`);
   assert.equal(a.mechanisms.dkim.status, "unverified");
+});
+
+// ---------------------------------------------------------------------------
+// SPF read from both headers. They can disagree, and one silently standing in
+// for the other produces the wrong authentication verdict.
+// ---------------------------------------------------------------------------
+
+// Verbatim from a real Microsoft 365 message.
+const MS_AR =
+  "Authentication-Results: spf=pass (sender IP is 149.72.232.65) smtp.mailfrom=em6908.spglobal.com; dkim=pass (signature was verified) header.d=spglobal.com;dmarc=pass action=none header.from=spglobal.com;compauth=pass reason=100";
+const MS_RSPF =
+  "Received-SPF: Pass (protection.outlook.com: domain of em6908.spglobal.com designates 149.72.232.65 as permitted sender) receiver=protection.outlook.com; client-ip=149.72.232.65; helo=wrqvzvqk.outbound-mail.sendgrid.net; pr=C";
+
+test("Microsoft A-R with no authserv-id keeps its SPF clause", () => {
+  const a = analyze(`${MS_AR}
+From: news@spglobal.com
+
+body`);
+  assert.equal(
+    a.trust.authservId,
+    null,
+    "was 'spf=pass' — the SPF clause was eaten as the server name",
+  );
+  assert.equal(a.mechanisms.spf.status, "pass");
+  assert.match(a.mechanisms.spf.source, /^Authentication-Results/);
+  assert.equal(a.mechanisms.dkim.status, "pass");
+  assert.equal(a.mechanisms.dmarc.status, "pass");
+});
+
+test("SPF IP is read from the A-R comment", () => {
+  const a = analyze(`${MS_AR}
+From: news@spglobal.com
+
+body`);
+  const ar = a.spf.sources.find((s) => s.header === "Authentication-Results");
+  assert.equal(ar.ip, "149.72.232.65");
+  assert.equal(ar.identity, "em6908.spglobal.com");
+});
+
+test("both SPF headers are kept and agree on result and IP", () => {
+  const a = analyze(`${MS_AR}
+${MS_RSPF}
+From: news@spglobal.com
+
+body`);
+  assert.equal(a.spf.sources.length, 2);
+  assert.equal(a.spf.resultsAgree, true);
+  assert.equal(a.spf.ipsAgree, true);
+  assert.ok(
+    !a.trust.warnings.some((w) => /SPF headers/.test(w)),
+    "agreeing headers must not warn",
+  );
+});
+
+test("SPF headers that disagree on result are both shown and warned about", () => {
+  const a = analyze(`Authentication-Results: mx.ourcompany.com; spf=fail (sender IP is 203.0.113.9) smtp.mailfrom=evil.test
+Received-SPF: Pass (forged) client-ip=203.0.113.9; envelope-from=bounce@evil.test
+From: a@bank.test
+
+body`);
+  assert.equal(a.mechanisms.spf.status, "fail", "A-R is authoritative");
+  assert.equal(a.spf.resultsAgree, false);
+  assert.ok(
+    a.trust.warnings.some((w) => /SPF headers disagree/.test(w)),
+    "disagreement must be a warning",
+  );
+  assert.equal(a.spf.sources.find((s) => s.header === "Received-SPF").status, "pass");
+});
+
+test("SPF headers that checked different IPs are warned about", () => {
+  const a = analyze(`Authentication-Results: mx.test; spf=pass (sender IP is 203.0.113.9) smtp.mailfrom=x.test
+Received-SPF: Pass (comment) client-ip=198.51.100.4; envelope-from=a@x.test
+From: a@x.test
+
+body`);
+  assert.equal(a.spf.ipsAgree, false);
+  assert.ok(a.trust.warnings.some((w) => /different IPs/.test(w)));
+});
+
+test("SPF IP is compared with the sender's public IP", () => {
+  const a = analyze(`Received: from mx.test (mx.test [149.72.232.65]) by inbox.test; Mon, 1 Sep 2025 10:00:01 +0000
+Received: from app.spglobal.test (app.spglobal.test [198.51.100.20]) by mx.test; Mon, 1 Sep 2025 10:00:00 +0000
+${MS_AR}
+From: news@spglobal.com
+
+body`);
+  assert.equal(a.spf.senderPublicIp, "198.51.100.20");
+  assert.equal(a.spf.matchesSenderIp, false, "ESP relay differs from origin");
+  assert.ok(
+    !a.trust.warnings.some((w) => /sender/i.test(w) && /SPF/.test(w)),
+    "a relay differing from the origin is normal, not a warning",
+  );
+});
+
+test("a forged Received-SPF cannot supply the domain used for alignment", () => {
+  // A-R records smtp.mailfrom as a bare domain (no @). That domain was being
+  // dropped, and the alignment check fell back to the forged header's domain —
+  // reporting a spoofed message as aligned.
+  const a = analyze(`Authentication-Results: spf=fail (sender IP is 203.0.113.9) smtp.mailfrom=evil.test; dmarc=fail header.from=spglobal.com
+Received-SPF: Pass (forged) client-ip=149.72.232.65; envelope-from=bounce@spglobal.com
+From: news@spglobal.com
+Return-Path: <bounce@evil.test>
+
+body`);
+  assert.equal(a.spf.domain, "evil.test", "bare-domain smtp.mailfrom must be read");
+  const spfRow = a.domainAlignment.entries.find((e) => e.source === "Return-Path");
+  assert.equal(spfRow.domain, "evil.test");
+  assert.equal(spfRow.aligned, false, "evil.test does not align with spglobal.com");
+});
+
+test("renderAuth shows both SPF headers and a spelled-out alignment comparison", () => {
+  const a = analyze(`${MS_AR}
+${MS_RSPF}
+From: news@spglobal.com
+Return-Path: <bounces@em6908.spglobal.com>
+
+body`);
+  const c = { innerHTML: "" };
+  renderAuth(c, a);
+  const html = c.innerHTML;
+  assert.match(html, /Authentication-Results/);
+  assert.match(html, /Received-SPF/);
+  assert.match(html, /149\.72\.232\.65/);
+  assert.match(html, /Both headers agree/);
+  assert.match(html, /Return-Path <span class="mono">\(em6908\.spglobal\.com\)/);
+  assert.match(html, /relaxed — both under <span class="mono">spglobal\.com/);
 });
 
 // ---------------------------------------------------------------------------

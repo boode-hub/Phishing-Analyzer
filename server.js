@@ -10,7 +10,9 @@ const fs = require("fs");
 const path = require("path");
 const https = require("https");
 
-const PORT = 8080;
+// Overridable because Windows reserves dynamic port ranges (Hyper-V, WinNAT)
+// that can include 8080, making it unbindable with EACCES. PORT=3000 node server.js
+const PORT = Number(process.env.PORT) || 8080;
 
 const MIME_TYPES = {
   ".html": "text/html",
@@ -203,6 +205,16 @@ const server = http.createServer((req, res) => {
       res.end(content, "utf-8");
     }
   });
+});
+
+server.on("error", (err) => {
+  if (err.code === "EACCES" || err.code === "EADDRINUSE") {
+    console.error(
+      `Port ${PORT} is unavailable (${err.code}). Pick another, e.g.:\n  PORT=3000 node server.js`,
+    );
+    process.exit(1);
+  }
+  throw err;
 });
 
 server.listen(PORT, () => {

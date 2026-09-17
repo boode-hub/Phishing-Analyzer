@@ -82,6 +82,7 @@ export function parseAuth(headers) {
   const senderIp = resolveSenderIp(receivedChain);
 
   const trust = assessHeaderTrust(authoritative, lower, arAll, headers);
+  trust.warnings.push(...crossCheckSpf(spf, senderIp));
 
   const overallStatus = determineOverallStatus({
     spf,
@@ -124,9 +125,17 @@ function parseAuthResults(raw) {
   if (!raw || typeof raw !== "string") return null;
 
   const segments = splitClauses(raw);
-  const idSegment = (segments.shift() || "").trim();
-  // authserv-id is the first token; an optional version number may follow.
-  const authservId = idSegment.split(/\s+/)[0] || null;
+
+  // RFC 8601 puts the authserv-id first, but Microsoft omits it and starts
+  // straight with "spf=pass (...)". Treating that clause as the id silently
+  // dropped the SPF result and let Received-SPF stand in for it — which reports
+  // the wrong verdict whenever the two headers disagree.
+  let authservId = null;
+  const firstClean = stripComments(segments[0] || "").trim();
+  if (!/^[a-z][a-z0-9-]*\s*=/i.test(firstClean)) {
+    // authserv-id is the first token; an optional version number may follow.
+    authservId = (segments.shift() || "").trim().split(/\s+/)[0] || null;
+  }
 
   const methods = {};
   for (const segment of segments) {
@@ -272,47 +281,96 @@ function parseDkimSignature(raw) {
 
 // ===== Mechanism resolution =====
 
+/**
+ * SPF is recorded in two different headers, and they do not always agree — a
+ * forged or stale Received-SPF can say pass while the receiving server's
+ * Authentication-Results says fail. Both are read and kept, each with the IP it
+ * evaluated, so the analyst sees any disagreement instead of one silently
+ * standing in for the other. Authentication-Results decides the headline
+ * status because it is written by the receiving MTA.
+ */
 function resolveSPF(authoritative, receivedSpf) {
+  const sources = [];
+
   const clause = authoritative?.methods?.spf?.[0];
   if (clause) {
     // RFC 8601 records the checked identity as smtp.mailfrom (or smtp.helo
     // when the MAIL FROM was empty, e.g. bounces).
     const identity =
       clause.props["smtp.mailfrom"] || clause.props["smtp.helo"] || null;
-    return {
+    // The evaluated IP lives in a property on some servers and only inside the
+    // comment on others: Microsoft writes "(sender IP is 1.2.3.4)", Google
+    // "(… designates 1.2.3.4 as permitted sender)".
+    const ip =
+      [clause.props["smtp.remote-ip"], clause.props["smtp.client-ip"]].find(
+        isValidIP,
+      ) ||
+      findIPs(clause.raw)[0] ||
+      null;
+    sources.push({
+      header: "Authentication-Results",
+      server: authoritative.authservId,
       status: normalizeAuthStatus(clause.result),
       rawResult: clause.result,
+      ip,
       identity,
-      domain: identity ? domainPart(identity) : null,
-      source: `Authentication-Results (${authoritative.authservId || "unknown"})`,
-      details: identity ? `${clause.result} — ${identity}` : clause.result,
-    };
+      domain: identityDomain(identity),
+    });
   }
 
-  if (receivedSpf.length) {
-    const r = receivedSpf[0];
-    const identity = r.envelopeFrom || r.helo || null;
-    const bits = [r.clientIp && `client-ip=${r.clientIp}`, identity]
-      .filter(Boolean)
-      .join(", ");
-    return {
+  const r = receivedSpf[0];
+  if (r) {
+    const identity = r.envelopeFrom || null;
+    sources.push({
+      header: "Received-SPF",
+      server: null,
       status: normalizeAuthStatus(r.result),
       rawResult: r.result,
-      identity,
-      domain: identity ? domainPart(identity) : null,
-      clientIp: r.clientIp,
-      source: "Received-SPF",
-      details: bits ? `${r.result} — ${bits}` : r.result,
+      ip: isValidIP(r.clientIp) ? r.clientIp : findIPs(r.raw)[0] || null,
+      identity: identity || r.helo || null,
+      domain: identityDomain(identity),
+      helo: r.helo,
+    });
+  }
+
+  if (!sources.length) {
+    return {
+      status: "unknown",
+      rawResult: null,
+      identity: null,
+      domain: null,
+      ip: null,
+      source: null,
+      sources: [],
+      resultsAgree: null,
+      ipsAgree: null,
+      details: "No SPF result published by the receiving server",
     };
   }
 
+  const primary = sources[0];
+  const both = sources.length === 2;
+  const withIp = sources.filter((s) => s.ip);
+
   return {
-    status: "unknown",
-    rawResult: null,
-    identity: null,
-    domain: null,
-    source: null,
-    details: "No SPF result published by the receiving server",
+    status: primary.status,
+    rawResult: primary.rawResult,
+    identity: primary.identity,
+    // The authoritative header's domain only. Borrowing it from the other
+    // header let a forged Received-SPF decide what alignment was checked.
+    domain: primary.domain,
+    ip: primary.ip || withIp[0]?.ip || null,
+    clientIp: primary.ip || withIp[0]?.ip || null,
+    source: primary.server
+      ? `${primary.header} (${primary.server})`
+      : primary.header,
+    sources,
+    resultsAgree: both ? sources[0].status === sources[1].status : null,
+    ipsAgree:
+      withIp.length === 2 ? withIp[0].ip === withIp[1].ip : null,
+    details: [primary.rawResult, primary.ip && `IP ${primary.ip}`, primary.identity]
+      .filter(Boolean)
+      .join(" — "),
   };
 }
 
@@ -615,6 +673,38 @@ function assessHeaderTrust(authoritative, lower, all, headers) {
   };
 }
 
+/**
+ * Compare the two SPF headers with each other and with the sender's public IP.
+ * Disagreement between the headers is a warning: one of them is stale or
+ * forged. A differing sender IP is only recorded, not warned about — mail sent
+ * through an ESP (SendGrid, Mailchimp) is legitimately checked against the
+ * ESP's relay rather than the customer's own server.
+ */
+function crossCheckSpf(spf, senderIp) {
+  const warnings = [];
+  const [ar, rs] = [
+    spf.sources.find((s) => s.header === "Authentication-Results"),
+    spf.sources.find((s) => s.header === "Received-SPF"),
+  ];
+
+  if (ar && rs && ar.status !== rs.status) {
+    warnings.push(
+      `SPF headers disagree: Authentication-Results says ${ar.rawResult.toUpperCase()} but Received-SPF says ${rs.rawResult.toUpperCase()}. Authentication-Results is written by the receiving server and is the one used.`,
+    );
+  }
+  if (ar?.ip && rs?.ip && ar.ip !== rs.ip) {
+    warnings.push(
+      `SPF headers evaluated different IPs: Authentication-Results checked ${ar.ip}, Received-SPF checked ${rs.ip}.`,
+    );
+  }
+
+  spf.senderPublicIp = senderIp.publicIp;
+  spf.matchesSenderIp =
+    spf.ip && senderIp.publicIp ? spf.ip === senderIp.publicIp : null;
+
+  return warnings;
+}
+
 function formatHeaderName(k) {
   return k
     .split("-")
@@ -842,6 +932,17 @@ function domainPart(address) {
     .replace(/[>\s;,]+$/, "")
     .toLowerCase();
   return d || null;
+}
+
+/**
+ * Domain of an SPF identity. smtp.mailfrom is written either as an address
+ * (bounce@example.com) or, by Microsoft, as a bare domain (example.com).
+ */
+function identityDomain(identity) {
+  if (!identity) return null;
+  const s = String(identity).trim();
+  if (s.includes("@")) return domainPart(s);
+  return s.replace(/[<>\s;,]+/g, "").toLowerCase() || null;
 }
 
 function matchValue(s, re) {

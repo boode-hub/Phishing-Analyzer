@@ -1982,3 +1982,66 @@ mark.highlight-credential {
   padding-left: 0.625rem;
   border-left: 2px solid var(--border);
 }
+
+/* ===== SPF: both headers side by side ===== */
+.spf-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+.spf-src {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.375rem 0.5rem;
+}
+.spf-src-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 10px;
+}
+.spf-src-name {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.spf-src-result {
+  font-weight: 700;
+}
+.spf-src-line {
+  font-size: 11px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.spf-verdict,
+.spf-sender {
+  font-size: 11px;
+  margin-top: 0.5rem;
+  overflow-wrap: anywhere;
+}
+.spf-verdict.ok { color: #22c55e; }
+.spf-verdict.bad { color: #f59e0b; font-weight: 600; }
+
+/* ===== Alignment: spelled-out comparison ===== */
+.align-compare {
+  font-size: 12px;
+}
+.align-side {
+  white-space: nowrap;
+}
+.align-op {
+  display: inline-block;
+  margin: 0 0.5rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+.align-why {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.align-why.warn {
+  color: #f59e0b;
+}
