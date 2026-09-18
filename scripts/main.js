@@ -41,6 +41,32 @@ let apiKeys = {
   corsProxyUrl: "",
 };
 
+// The app must never run inside someone else's frame: a framed copy can be
+// covered with an overlay so the analyst clicks something they cannot see, and
+// static hosting (GitHub Pages) cannot send X-Frame-Options or a frame-ancestors
+// header. `frame-ancestors` is also ignored in a <meta> policy, so the check
+// lives here.
+if (window.top !== window.self) {
+  document.documentElement.replaceChildren(
+    Object.assign(document.createElement("head"), {}),
+    (() => {
+      const body = document.createElement("body");
+      body.style.cssText = "background:#0d1117;color:#e6edf3;font:14px/1.6 system-ui,sans-serif;padding:24px";
+      const p = document.createElement("p");
+      p.textContent = "This tool refuses to run inside a frame. Open it directly:";
+      const a = document.createElement("a");
+      a.href = window.location.href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.style.color = "#9fef00";
+      a.textContent = window.location.href;
+      body.append(p, a);
+      return body;
+    })(),
+  );
+  throw new Error("Refusing to run in a frame");
+}
+
 // Detect if running locally (via node server.js) vs GitHub Pages
 const isLocalhost =
   window.location.hostname === "localhost" ||

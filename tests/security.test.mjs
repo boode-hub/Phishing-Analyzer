@@ -82,6 +82,14 @@ test("nothing is fetched from a third party at page load", () => {
   assert.ok(fonts.length >= 2, "the woff2 files must ship with the app");
 });
 
+test("the app refuses to run inside a frame", () => {
+  const main = scripts.find(([n]) => n === "main.js")[1];
+  assert.ok(
+    /window\.top !== window\.self/.test(main),
+    "static hosting cannot send X-Frame-Options, so the check must be in the code",
+  );
+});
+
 test("the local server binds loopback only", () => {
   const server = read("server.js");
   assert.ok(
