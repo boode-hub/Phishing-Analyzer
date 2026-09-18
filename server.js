@@ -45,7 +45,6 @@ function proxyRequest(targetUrl, options, res) {
     // Copy status code
     res.writeHead(proxyRes.statusCode, {
       "Content-Type": proxyRes.headers["content-type"] || "application/json",
-      "Access-Control-Allow-Origin": "*",
     });
     proxyRes.pipe(res);
   });
@@ -63,14 +62,44 @@ function proxyRequest(targetUrl, options, res) {
   proxyReq.end();
 }
 
+// Only these extensions are served. Anything else — .git, source control
+// metadata, editor backups, a stray .env — is refused rather than published on
+// a port every page in the browser can reach.
+const SERVABLE = new Set(Object.keys(MIME_TYPES));
+
 const server = http.createServer((req, res) => {
+  try {
+    handleRequest(req, res);
+  } catch (err) {
+    // A single bad request must never take the tool down.
+    console.error("[Request error]", err.message);
+    if (!res.headersSent) res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("Server error");
+  }
+});
+
+// The page is served from this same origin, so a request carrying any other
+// Origin is not the app.
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+
+function sameOrigin(req) {
+  const origin = req.headers.origin;
+  return !origin || LOCAL_ORIGIN.test(origin);
+}
+
+function handleRequest(req, res) {
+  // Only the app may use the relay and the local lookups.
+  if (!sameOrigin(req) && /^\/(proxy|lookup)\//.test(req.url)) {
+    res.writeHead(403, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "This endpoint serves the local app only." }));
+    return;
+  }
+
   // CORS preflight
   if (req.method === "OPTIONS") {
-    res.writeHead(204, {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, x-apikey, Key",
-    });
+    // Same-origin requests need no preflight; answering one at all would only
+    // help a cross-origin caller.
+    res.writeHead(204, { Allow: "GET, POST" });
     res.end();
     return;
   }
@@ -84,10 +113,7 @@ const server = http.createServer((req, res) => {
     const query = new URL(req.url, "http://localhost").searchParams;
     const target = validTarget(query.get("q"));
     const json = (status, body) => {
-      res.writeHead(status, {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      });
+      res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body));
     };
     if (!target) {
@@ -213,6 +239,21 @@ const server = http.createServer((req, res) => {
     res.end("<h1>400 Bad Request</h1>", "utf-8");
     return;
   }
+
+  // A null byte truncates the name inside the filesystem layer, and fs throws
+  // on it. Control characters have no business in a path either.
+  if (/[\u0000-\u001f]/.test(requestPath)) {
+    res.writeHead(400, { "Content-Type": "text/html" });
+    res.end("<h1>400 Bad Request</h1>", "utf-8");
+    return;
+  }
+
+  // Nothing hidden: no .git, no dot-files, at any depth.
+  if (requestPath.split(/[\\/]/).some((part) => part.startsWith("."))) {
+    res.writeHead(403, { "Content-Type": "text/html" });
+    res.end("<h1>403 Forbidden</h1>", "utf-8");
+    return;
+  }
   const filePath = path.join(
     ROOT,
     requestPath === "/" ? "index.html" : requestPath,
@@ -225,7 +266,12 @@ const server = http.createServer((req, res) => {
   }
 
   const extname = String(path.extname(filePath)).toLowerCase();
-  const contentType = MIME_TYPES[extname] || "application/octet-stream";
+  if (!SERVABLE.has(extname)) {
+    res.writeHead(403, { "Content-Type": "text/html" });
+    res.end("<h1>403 Forbidden</h1>", "utf-8");
+    return;
+  }
+  const contentType = MIME_TYPES[extname];
 
   fs.readFile(filePath, (error, content) => {
     if (error) {
@@ -237,11 +283,18 @@ const server = http.createServer((req, res) => {
         res.end("Server Error: " + error.code + " ..\n");
       }
     } else {
-      res.writeHead(200, { "Content-Type": contentType });
+      res.writeHead(200, {
+        "Content-Type": contentType,
+        // The app is never meant to be framed, and nothing here should be
+        // sniffed into a different type than it declares.
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+      });
       res.end(content, "utf-8");
     }
   });
-});
+}
 
 server.on("error", (err) => {
   if (err.code === "EACCES" || err.code === "EADDRINUSE") {

@@ -109,6 +109,50 @@ test("local DNS and WHOIS accept only a bare domain or IP", async () => {
   assert.equal(validTarget(""), null);
 });
 
+test("a payload in every header and in the body never becomes markup", async () => {
+  const [{ parseHeaders }, { parseAuth }, { parseBody }, { extractIOCs }, { analyzeIdentity }, { calculateScore }, { buildHtmlReport }] =
+    await Promise.all([
+      import("../scripts/parse-headers.js"),
+      import("../scripts/parse-auth.js"),
+      import("../scripts/parse-body.js"),
+      import("../scripts/extract-iocs.js"),
+      import("../scripts/analyze-identity.js"),
+      import("../scripts/score.js"),
+      import("../scripts/report.js"),
+    ]);
+
+  const xss = `"><script>window.pwned=1</script><img src=x onerror=window.pwned=2><svg/onload=window.pwned=3>`;
+  const raw = [
+    `From: ${xss} <a@evil.test>`,
+    `Reply-To: "${xss}" <r@evil.test>`,
+    `Subject: ${xss}`,
+    `X-Mailer: ${xss}`,
+    `Message-ID: <${xss}@evil.test>`,
+    `Received: from ${xss} ([203.0.113.5]) by mx.test; Mon, 1 Jan 2024 10:00:00 +0000`,
+    `Authentication-Results: mx.test; spf=fail (${xss}) smtp.mailfrom=evil.test; dkim=fail; dmarc=fail`,
+    `Content-Type: text/html`,
+    ``,
+    `<html><body><a href="javascript:window.pwned=4">${xss}</a><a href="https://evil.test/${xss}">https://paypal.com</a></body></html>`,
+  ].join("\r\n");
+
+  const headers = parseHeaders(raw);
+  const auth = parseAuth(headers);
+  const body = parseBody(raw);
+  const iocs = extractIOCs(headers, body);
+  const identity = analyzeIdentity(headers);
+  const score = calculateScore(auth, iocs, null, headers, identity);
+  const html = buildHtmlReport({ headers, auth, iocs, score, identity }, {});
+
+  // Escaped payload in text is inert; a handler or a script inside a tag is not,
+  // so only tag contents are inspected.
+  const tags = [...html.matchAll(/<[^>]*>/g)].map((m) => m[0]);
+  const dangerous = tags.filter(
+    (t) => /\son\w+\s*=/i.test(t) || /javascript:/i.test(t) || /^<script/i.test(t) || /\ssrc\s*=\s*["']?https?:/i.test(t),
+  );
+  assert.deepEqual(dangerous, [], `markup escaped into the report: ${dangerous.slice(0, 2).join(" ")}`);
+  assert.ok(tags.length > 100, "report looks truncated");
+});
+
 test("the exported report still cannot load or run anything", async () => {
   const { buildHtmlReport } = await import("../scripts/report.js");
   const out = buildHtmlReport({ headers: {}, auth: {}, iocs: {}, score: {} }, {});

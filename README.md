@@ -372,12 +372,17 @@ The app parses hostile input, so it is built to stay harmless even if the parsin
 - A strict **Content-Security-Policy**: `default-src 'self'`, `script-src 'self'` with no `unsafe-inline`, and `object-src`, `base-uri` and `form-action` set to `'none'`. An escaping mistake cannot become code execution.
 - **No inline event handlers anywhere.** Every result button carries a `data-act` attribute and is handled by one delegated listener; nothing is exposed on `window`.
 - **Fonts ship with the app.** Nothing is fetched from Google or any other third party at load time.
-- **The local server binds `127.0.0.1` only**, so the analyzer and its API relay are not reachable from the rest of the network.
+- **The local server binds `127.0.0.1` only**, so the analyzer and its API relay are not reachable from the rest of the network. It also:
+  - serves only known file types, and never a dot-directory such as `.git`;
+  - refuses paths containing null bytes or control characters, and survives them — one such request used to crash it;
+  - answers the relay and the local lookups **only for the app's own origin**, so a page you happen to be visiting cannot use your machine as a DNS, WHOIS or VirusTotal proxy;
+  - sends `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`, and hands out no CORS permission at all;
+  - catches any unexpected error per request instead of exiting.
 - **The optional Cloudflare relay forwards to VirusTotal and AbuseIPDB over HTTPS only** — without that allow-list, anyone who learned the worker URL could route their own traffic through your account.
 - **API keys do not have to be stored.** Settings can keep them in memory for the tab instead of in this browser's storage.
 - The message's own HTML is previewed in a sandboxed frame with its own blocking policy, and exported reports carry `default-src 'none'` and no script.
 
-`tests/security.test.mjs` checks each of these, so none of them can be lost by accident.
+`tests/security.test.mjs` and `tests/server.test.mjs` check each of these against a real running server, so none of them can be lost by accident.
 
 ## Privacy and security
 
@@ -478,6 +483,7 @@ node tests/language.test.mjs     # whole-word matching, BEC / payment-fraud phra
 node tests/theme.test.mjs        # accent colour palette, apply and reset
 node tests/security.test.mjs     # CSP, no inline handlers, no third-party assets, relay allow-list
 node tests/detection.test.mjs    # identity, link shapes, file content, ARC, anomalies, BEC floor
+node tests/server.test.mjs       # traversal, null bytes, dot-files, cross-origin use of the local endpoints
 node tests/imports.test.mjs      # every cross-module call is imported
 ```
 
@@ -492,11 +498,12 @@ node tests/imports.test.mjs      # every cross-module call is imported
 | attachments | 9 |
 | language | 7 |
 | headers | 6 |
-| detection | 23 |
-| security | 9 |
+| detection | 25 |
+| server | 11 |
+| security | 10 |
 | theme | 3 |
 | imports | 1 |
-| **Total** | **273** |
+| **Total** | **287** |
 
 **Deployment:** every push to `master` runs all suites in GitHub Actions and deploys to GitHub Pages only if they pass. A broken build never reaches the live site. After a deploy, browsers may keep the previous version for a few minutes — press **Ctrl+F5** to load the latest.
 

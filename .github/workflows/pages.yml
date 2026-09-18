@@ -42,6 +42,7 @@ jobs:
       - run: node tests/imports.test.mjs
       - run: node tests/security.test.mjs
       - run: node tests/detection.test.mjs
+      - run: node tests/server.test.mjs
 
   deploy:
     needs: test
