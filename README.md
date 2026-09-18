@@ -27,6 +27,7 @@ All analysis runs locally in your browser. Nothing is uploaded; the only data th
   - [Attachments and file hashes](#attachments-and-file-hashes)
   - [Live DNS and WHOIS](#live-dns-and-whois)
   - [Batch analysis](#batch-analysis)
+  - [Comparing messages](#comparing-messages)
   - [Language analysis](#language-analysis)
   - [Body preview](#body-preview)
   - [Email headers](#email-headers)
@@ -57,6 +58,7 @@ All analysis runs locally in your browser. Nothing is uploaded; the only data th
 - **A verdict you can explain** — every point of the score has a reason, and the tool says when the evidence is too thin to trust a low score.
 - **Report in one click** — a styled, self-contained HTML report, a CSV and a JSON file for tooling, with every indicator defanged, plus a one-click copy of all indicators.
 - **A whole batch at once** — select many files and every message is scored and listed worst first.
+- **A comparison page** — drop in a pile of messages and read them side by side, with the shared IP, link, address or file hash that ties a campaign together called out.
 - **Private by design** — no uploads, no tracking, and the message's own HTML preview cannot phone home.
 - **Works on phones.**
 
@@ -268,6 +270,16 @@ RDAP is used where registries support it, with classic WHOIS on port 43 as the f
 
 Select several files in the upload box and every message is parsed, scored and listed **worst first**, with its verdict, sender and subject. Clicking **Open** loads that message into the full view. Everything stays local, and one bad message in a wave of twenty does not get missed.
 
+### Comparing messages
+
+**Compare emails** (button next to Analyze, and a link on the batch panel) opens a second page built for a wave of messages rather than one:
+
+- **Drag and drop** as many `.eml` files as you like, anywhere on the page, or click to choose them. Everything is parsed in the browser, exactly as on the main page.
+- **Side by side**: one column per message, one row per property — verdict and score, SPF, DKIM, DMARC, alignment, identity findings, From, display name, Reply-To, Return-Path, subject, date, sender IP, origin host, Message-ID domain, X-Mailer, link count and link domains, deceptive links, attachments and their SHA-256, language flags, header anomalies, trust warnings and ARC. **Only show differences** hides every row where all the messages agree.
+- **What these messages share**: the correlation the analyst is really after. Values appearing in more than one message — a file hash, a sending IP, a link, a Reply-To, a sender domain, a Message-ID domain, a display name, an X-Mailer, or a subject that differs only by a number — are listed strongest first, with the messages they appear in. Cells holding a shared value are highlighted in the table too. The page says plainly whether the messages share infrastructure or only wording.
+- **Export** the whole comparison as CSV or JSON, including the shared-indicator list.
+- Indicators are defanged, as everywhere else.
+
 ### Email headers
 
 The **Email Headers** panel has two collapsible views:
@@ -434,8 +446,10 @@ Raw email
 /
 ├── index.html                  App shell
 ├── favicon.svg                 App icon (+ favicon-32.png, apple-touch-icon.png)
+├── compare.html                Side-by-side comparison page
 ├── styles/
-│   └── main.css                Design system and all styles
+│   ├── main.css                Design system and all styles
+│   └── compare.css             Comparison page styles
 ├── scripts/
 │   ├── main.js                 Start-up, analysis flow, lookups, export controls
 │   ├── parse-headers.js        Header parsing and unfolding
@@ -451,6 +465,8 @@ Raw email
 │   ├── hash-utils.js           Byte-accurate SHA-256 and MD5
 │   ├── analyze-identity.js     Display-name and lookalike-domain analysis
 │   ├── file-type.js            Attachment content sniffing and HTML smuggling
+│   ├── compare-model.js        Side-by-side table and campaign correlation
+│   ├── compare.js              Compare page: drag and drop, rendering, exports
 │   └── theme.js                Accent colour picker palette
 ├── lookup-local.js             DNS and WHOIS/RDAP performed by this machine
 ├── fonts/                      Self-hosted Inter and JetBrains Mono
@@ -484,6 +500,7 @@ node tests/theme.test.mjs        # accent colour palette, apply and reset
 node tests/security.test.mjs     # CSP, no inline handlers, no third-party assets, relay allow-list
 node tests/detection.test.mjs    # identity, link shapes, file content, ARC, anomalies, BEC floor
 node tests/server.test.mjs       # traversal, null bytes, dot-files, cross-origin use of the local endpoints
+node tests/compare.test.mjs      # side-by-side table, campaign correlation, comparison exports
 node tests/imports.test.mjs      # every cross-module call is imported
 ```
 
@@ -500,10 +517,11 @@ node tests/imports.test.mjs      # every cross-module call is imported
 | headers | 6 |
 | detection | 25 |
 | server | 11 |
-| security | 10 |
+| compare | 11 |
+| security | 11 |
 | theme | 3 |
 | imports | 1 |
-| **Total** | **287** |
+| **Total** | **299** |
 
 **Deployment:** every push to `master` runs all suites in GitHub Actions and deploys to GitHub Pages only if they pass. A broken build never reaches the live site. After a deploy, browsers may keep the previous version for a few minutes — press **Ctrl+F5** to load the latest.
 

@@ -43,6 +43,7 @@ jobs:
       - run: node tests/security.test.mjs
       - run: node tests/detection.test.mjs
       - run: node tests/server.test.mjs
+      - run: node tests/compare.test.mjs
 
   deploy:
     needs: test

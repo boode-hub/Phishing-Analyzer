@@ -1,0 +1,286 @@
+/* Compare page — built on the same tokens as the analyzer. */
+
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-deep);
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.dropzone:hover,
+.dropzone:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  outline: none;
+}
+.dropzone.dragging {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  box-shadow: 0 0 20px var(--accent-glow);
+}
+.dropzone svg {
+  color: var(--accent);
+}
+.dropzone-title {
+  margin: 0.5rem 0 0.25rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.dropzone-sub {
+  margin: 0;
+  font-size: 12px;
+}
+.dropzone code {
+  font-family: "JetBrains Mono", monospace;
+  background: var(--bg-elevated);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--accent);
+}
+
+.compare-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  margin-top: 0.875rem;
+}
+.compare-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+}
+
+.compare-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+}
+.compare-head h2 {
+  margin: 0;
+}
+.compare-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.compare-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.compare-toggle input {
+  accent-color: var(--accent);
+}
+
+/* ===== the table ===== */
+.compare-scroll {
+  margin-top: 0.875rem;
+  max-height: 75vh;
+  overflow: auto;
+}
+.compare-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  width: max-content;
+  min-width: 100%;
+}
+.compare-table th,
+.compare-table td {
+  border-bottom: 1px solid var(--border-light);
+  padding: 0.5rem 0.75rem;
+  vertical-align: top;
+  text-align: left;
+}
+/* The property column stays put while the messages scroll sideways. */
+.compare-table .prop-col {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.compare-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--bg-base);
+  border-bottom: 1px solid var(--border);
+}
+.compare-table thead .prop-col {
+  z-index: 4;
+}
+.msg-col {
+  min-width: 15rem;
+  max-width: 22rem;
+}
+.msg-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+}
+.msg-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.msg-name {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.msg-remove {
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  min-height: 24px;
+}
+.msg-remove:hover {
+  color: var(--red);
+}
+
+.compare-table .cell {
+  color: var(--text);
+  max-width: 22rem;
+  overflow-wrap: anywhere;
+}
+.compare-table .cell.good { color: var(--green); }
+.compare-table .cell.bad { color: var(--red); }
+.compare-table .cell.warn { color: var(--yellow); }
+.compare-table .cell.muted { color: var(--text-secondary); }
+.cell-shared {
+  background: var(--accent-bg);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.shared-dot {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0 0.35rem;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.row-identical .cell {
+  color: var(--text-secondary);
+}
+
+/* ===== shared indicators ===== */
+.shared-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.shared-table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 0.4rem 0.625rem;
+  border-bottom: 1px solid var(--border);
+}
+.shared-table td {
+  padding: 0.5rem 0.625rem;
+  border-bottom: 1px solid var(--border-light);
+  overflow-wrap: anywhere;
+}
+.shared-value {
+  color: var(--accent);
+}
+.shared-count {
+  display: inline-block;
+  min-width: 1.4rem;
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  color: var(--accent);
+}
+.msg-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 0.2rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.compare-lead {
+  margin: 0 0 0.75rem;
+  font-size: 13px;
+  color: var(--text);
+}
+.compare-note {
+  margin: 0.625rem 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.compare-empty {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+  /* Tap targets stay finger-sized on a phone. */
+  .msg-remove {
+    min-width: 40px;
+    min-height: 40px;
+    font-size: 20px;
+  }
+  .compare-toggle {
+    min-height: 40px;
+  }
+  .compare-table .prop-col {
+    position: static;
+  }
+  .msg-col {
+    min-width: 12rem;
+  }
+  .compare-scroll {
+    max-height: none;
+  }
+  .dropzone {
+    padding: 1.25rem 0.75rem;
+  }
+}

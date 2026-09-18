@@ -3057,6 +3057,21 @@ mark.highlight-credential {
   vertical-align: middle;
   overflow-wrap: anywhere;
 }
+/* The action column was left to fight the long columns for space, and "Open"
+   ended up one letter per line. It takes exactly the width it needs; the
+   subject gives way instead. */
+.batch-table td:last-child,
+.batch-table th:last-child {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+.batch-table td:last-child .btn-sm {
+  white-space: nowrap;
+}
+.batch-table td:nth-child(4) {
+  min-width: 12rem;
+}
 .batch-tier {
   display: inline-block;
   padding: 0.15rem 0.5rem;
@@ -3115,4 +3130,20 @@ a.btn-ioc-lookup {
 }
 a.btn-ioc-lookup:hover {
   text-decoration: none;
+}
+
+
+/* Link out to the comparison page. */
+.btn-compare {
+  text-decoration: none;
+}
+.panel-link {
+  margin-left: 0.625rem;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+}
+.panel-link:hover {
+  text-decoration: underline;
 }

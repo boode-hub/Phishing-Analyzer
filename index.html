@@ -113,6 +113,12 @@
             Analyze Email
           </button>
           <button id="clear-btn" class="btn btn-secondary">Clear</button>
+          <a class="btn btn-secondary btn-compare" href="compare.html" title="Put several messages side by side and see what they share">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="3" y="4" width="7" height="16" rx="1" /><rect x="14" y="4" width="7" height="16" rx="1" />
+            </svg>
+            Compare emails
+          </a>
         </div>
         <div id="input-status" class="status-message"></div>
       </section>
@@ -145,7 +151,7 @@
 
       <!-- Batch results: shown when several files are analyzed at once -->
       <section id="batch-section" class="panel hidden">
-        <h2>Batch results</h2>
+        <h2>Batch results <a class="panel-link" href="compare.html">compare these side by side →</a></h2>
         <div id="batch-content"></div>
       </section>
 
