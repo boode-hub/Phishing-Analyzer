@@ -178,6 +178,20 @@ body {
   width: 30px;
   height: 30px;
   flex-shrink: 0;
+  /* One turn every 14 seconds: noticeable if you watch it, invisible if
+     you are reading a verdict next to it. */
+  animation: logo-spin 14s linear infinite;
+}
+@keyframes logo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Anyone who has asked their system for less motion gets a still mark. */
+@media (prefers-reduced-motion: reduce) {
+  .app-logo {
+    animation: none;
+  }
 }
 
 /* ===== PANELS ===== */
