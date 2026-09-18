@@ -7,7 +7,7 @@ import {
   isValidIPv4,
   isPrivateIP,
   findIPs,
-  receivedFromIP,
+  receivedFromIPs,
 } from "./ip-utils.js";
 import { unwrapRedirect } from "./url-decode.js";
 import { lookalikeOf } from "./analyze-identity.js";
@@ -168,10 +168,10 @@ function extractFromHeaders(headers, iocs) {
     }
   }
 
-  // Extract the sending host's IP from each Received header.
+  // Every address of the sending host in each Received header — the public
+  // one it was seen from and any LAN address it announced — so neither is lost.
   for (const received of headers.received || []) {
-    const ip = receivedFromIP(received);
-    if (ip) trackIp(ip, "Received");
+    for (const ip of receivedFromIPs(received)) trackIp(ip, "Received");
   }
 
   // Now push unique IPs with combined source info

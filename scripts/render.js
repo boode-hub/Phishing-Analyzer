@@ -193,7 +193,13 @@ export async function renderSummary(container, analysis, apiKeys) {
       ${originIp ? whoisPanel("ip", originIp) : ""}
       ${
         internalIp
-          ? `<div class="ip-internal">First hop recorded <span class="mono">${esc(internalIp)}</span>, a private address${senderIp.privateHopsSkipped ? ` (plus ${senderIp.privateHopsSkipped} more private hop${senderIp.privateHopsSkipped > 1 ? "s" : ""})` : ""}. ${originIp ? "Walked outward to the first public address above." : "No public address appears anywhere in the chain."}</div>`
+          ? `<div class="ip-internal">First hop recorded <span class="mono">${esc(internalIp)}</span>, a private address${senderIp.privateHopsSkipped ? ` (plus ${senderIp.privateHopsSkipped} more private hop${senderIp.privateHopsSkipped > 1 ? "s" : ""})` : ""}. ${
+                originIp
+                  ? senderIp.publicHop?.isOrigin
+                    ? "The same header records the public address it was sent from, shown above."
+                    : "Walked outward to the first public address above."
+                  : "No public address appears anywhere in the chain."
+              }</div>`
           : ""
       }
     </div>
@@ -572,7 +578,14 @@ export function renderAuth(c, auth) {
   const recvHtml = recv
     .map(
       (hop) =>
-        `<div class="received-hop ${hop.suspicious ? "suspicious-hop" : ""}"><div class="hop-num">${hop.number}</div><div class="hop-details"><div class="hop-from">From: ${esc(hop.from || "N/A")}${hop.isOrigin ? ' <span class="hop-tag">origin</span>' : ""}</div><div class="hop-by">By: ${esc(hop.by || "N/A")}</div><div class="hop-ip">IP: <span class="mono">${esc(hop.ip || "N/A")}</span></div><div class="hop-date">${esc(hop.date || "N/A")}</div>${(hop.warnings || []).map((w) => `<div class="hop-warning">&#9888; ${esc(w)}</div>`).join("")}</div></div>`,
+        `<div class="received-hop ${hop.suspicious ? "suspicious-hop" : ""}"><div class="hop-num">${hop.number}</div><div class="hop-details"><div class="hop-from">From: ${esc(hop.from || "N/A")}${hop.isOrigin ? ' <span class="hop-tag">origin</span>' : ""}</div><div class="hop-by">By: ${esc(hop.by || "N/A")}</div><div class="hop-ip">IP: <span class="mono">${esc(hop.ip || "N/A")}</span>${
+          (hop.ips || []).length > 1
+            ? ` <span class="hop-also">also recorded ${hop.ips
+                .slice(1)
+                .map((ip) => `<span class="mono">${esc(ip)}</span>${isRoutableIP(ip) ? "" : " (private)"}`)
+                .join(", ")}</span>`
+            : ""
+        }</div><div class="hop-date">${esc(hop.date || "N/A")}</div>${(hop.warnings || []).map((w) => `<div class="hop-warning">&#9888; ${esc(w)}</div>`).join("")}</div></div>`,
     )
     .join("");
 

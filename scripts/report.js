@@ -459,7 +459,12 @@ export function buildHtmlReport(analysis, { lookups = new Map(), local = new Map
           `<span class="hop">${hop.number}</span>`,
           hop.from ? code(defangDomain(hop.from)) : DASH,
           hop.by ? code(defangDomain(hop.by)) : DASH,
-          hop.ip ? code(defangIp(hop.ip)) : DASH,
+          hop.ip
+            ? code(defangIp(hop.ip)) +
+              ((hop.ips || []).length > 1
+                ? `<div class="dim small">also ${hop.ips.slice(1).map((ip) => esc(defangIp(ip))).join(", ")}</div>`
+                : "")
+            : DASH,
           hop.date ? `<span class="small">${esc(hop.date)}</span>` : DASH,
         ]),
     )}`;

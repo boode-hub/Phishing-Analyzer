@@ -13,6 +13,8 @@ import {
   isPrivateIP,
   isRoutableIP,
   findIPs,
+  receivedFromIP,
+  receivedFromIPs,
 } from "../scripts/ip-utils.js";
 import { parseHeaders } from "../scripts/parse-headers.js";
 import { parseAuth } from "../scripts/parse-auth.js";
@@ -266,6 +268,69 @@ await test("invalid addresses are skipped while walking outward", () => {
   // The bogus hop has no usable IP, so the origin is the next valid one out.
   assert.equal(a.senderIp.publicIp, "203.0.113.7");
   assert.equal(a.senderIp.originIp, "203.0.113.7");
+});
+
+// --- one header, two addresses ------------------------------------------------
+// The originating Received header very often records BOTH the address the
+// client claimed (its LAN address, behind NAT) and the address the server
+// actually saw. Taking the first one found reported the private address, gave
+// up on the header, and named a downstream relay as the sender.
+
+await test("a public address beside a private one in the same header wins (Postfix/Outlook)", () => {
+  const h =
+    "from [192.168.1.23] (dsl-203-0-113-7.provider.net [203.0.113.7]) by smtp.provider.com with ESMTPSA; Mon, 1 Jan 2024 10:00:00 +0000";
+  assert.equal(receivedFromIP(h), "203.0.113.7");
+  assert.deepEqual(receivedFromIPs(h), ["203.0.113.7", "192.168.1.23"]);
+});
+
+await test("an Exim helo= claim never outranks the address the server saw", () => {
+  assert.equal(
+    receivedFromIP("from [203.0.113.7] (port=52110 helo=[192.168.1.23]) by server.host.com with esmtpsa; Mon, 1 Jan 2024 10:00:00 +0000"),
+    "203.0.113.7",
+  );
+  // The server saw an internal address; a public HELO literal is only a claim
+  // and must not become the sender — the walk continues outward instead.
+  assert.equal(
+    receivedFromIP("from [10.0.0.9] (port=40000 helo=[203.0.113.99]) by relay.test; Mon, 1 Jan 2024 10:00:00 +0000"),
+    "10.0.0.9",
+  );
+});
+
+await test("two bracketed addresses, private first, still yield the public one", () => {
+  assert.equal(
+    receivedFromIP("from mail.example.com ([10.0.0.5]) ([198.51.100.20]) by mx.example.com; Mon, 1 Jan 2024 10:00:00 +0000"),
+    "198.51.100.20",
+  );
+});
+
+await test("the receiving server's address in the by-clause is still never used", () => {
+  assert.equal(
+    receivedFromIP("from WIN-PC (10.1.2.3) by relay.example.com (203.0.113.7); Mon, 1 Jan 2024 10:00:00 +0000"),
+    "10.1.2.3",
+  );
+});
+
+await test("the sender IP comes from the first header when it holds both addresses", () => {
+  const a = chainOf(
+    "from mx.test (mx.test [198.51.100.99]) by inbox.test; Mon, 1 Jan 2024 10:00:09 +0000",
+    "from [192.168.1.23] (dsl.provider.net [203.0.113.7]) by mx.test; Mon, 1 Jan 2024 10:00:00 +0000",
+  );
+  assert.equal(a.senderIp.publicIp, "203.0.113.7", "not the downstream relay 198.51.100.99");
+  assert.equal(a.senderIp.privateIp, "192.168.1.23", "the LAN address is still reported");
+  assert.equal(a.senderIp.privateHopsSkipped, 0);
+  const origin = a.receivedChain.find((h) => h.isOrigin);
+  assert.deepEqual(origin.ips, ["203.0.113.7", "192.168.1.23"]);
+  assert.equal(origin.privateIp, false, "the hop is not 'private' when it names a public sender");
+});
+
+await test("both addresses from that header become indicators", () => {
+  const headers = parseHeaders(
+    "Received: from [192.168.1.23] (dsl.provider.net [203.0.113.7]) by mx.test; Mon, 1 Jan 2024 10:00:00 +0000\nFrom: a@example.com\n\nbody",
+  );
+  const ips = extractIOCs(headers, null).ips;
+  const byValue = Object.fromEntries(ips.map((i) => [i.value, i]));
+  assert.ok(byValue["203.0.113.7"], "public sender missing from the IOCs");
+  assert.ok(byValue["192.168.1.23"]?.private, "the LAN address is listed and marked private");
 });
 
 await test("an empty chain resolves to nothing rather than throwing", () => {

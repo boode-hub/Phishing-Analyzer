@@ -6,7 +6,7 @@ import {
   isPrivateIP,
   isRoutableIP,
   findIPs,
-  receivedFromIP,
+  receivedFromIPs,
 } from "./ip-utils.js";
 //
 // Design notes, because the accuracy of this file is the accuracy of the tool:
@@ -861,8 +861,10 @@ function parseReceivedChain(receivedHeaders) {
       warnings: [],
     };
 
-    // The sending host's address, validated, from the from-clause only.
-    hop.ip = receivedFromIP(clean);
+    // The sending host's addresses, validated, from the from-clause only —
+    // best first, so a public address beside a private one is the one used.
+    hop.ips = receivedFromIPs(clean);
+    hop.ip = hop.ips[0] || null;
 
     const fromMatch = clean.match(/\bfrom\s+([^\s;()\[\]]+)/i);
     if (fromMatch) hop.from = fromMatch[1];
@@ -938,7 +940,11 @@ export function resolveSenderIp(chain) {
 
     if (result.originIp === null) {
       result.originIp = hop.ip;
-      if (isPrivateIP(hop.ip)) result.privateIp = hop.ip;
+      // The origin hop may record the client's LAN address beside the public
+      // one it was seen from. The public one is the sender; the LAN one is
+      // still worth showing as the machine's internal address.
+      const internal = (hop.ips || [hop.ip]).find(isPrivateIP);
+      if (internal) result.privateIp = internal;
     } else if (isPrivateIP(hop.ip)) {
       result.privateHopsSkipped++;
     }

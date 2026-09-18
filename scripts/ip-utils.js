@@ -101,21 +101,54 @@ export function isRoutableIP(value) {
 }
 
 /**
- * The address of the host that SENT a hop, from one Received header.
+ * Every address of the host that SENT a hop, from one Received header, best
+ * first.
  *
  * "Received: from A (A [1.2.3.4]) by B (B [5.6.7.8]); date" — only the from
  * clause describes the sender; the by clause is the server that received it.
  * Searching the whole header let B's address be reported as the sender's
  * whenever A's clause carried no address of its own. Microsoft writes the
  * address bare in parentheses rather than brackets, so both forms are read.
+ *
+ * One from-clause often holds two addresses. A client behind NAT introduces
+ * itself with its LAN address — "from [192.168.1.23]" — while the server
+ * records the public address it actually saw: "(dsl.example [203.0.113.7])".
+ * Taking the first address found reported the LAN one, gave up on the header
+ * and named a downstream relay as the sender. So addresses are ranked:
+ *
+ *   1. public, and not a HELO claim     — the sender's real address
+ *   2. private, and not a HELO claim    — the sender really is internal; the
+ *                                         walk outward finds the public hop
+ *   3. public HELO claim                — only when nothing else is recorded
+ *   4. private HELO claim
+ *
+ * A HELO claim is whatever the client said about itself (Exim writes it as
+ * "helo=[x]"): it costs nothing to forge, so it never outranks an address the
+ * server observed.
  */
-export function receivedFromIP(header) {
+export function receivedFromIPs(header) {
   const fromClause =
     String(header).match(/\bfrom\b([\s\S]*?)(?=\bby\b|\bwith\b|;|$)/i)?.[1] || "";
-  const bracketed = [...fromClause.matchAll(/\[([^\]]+)\]/g)]
-    .map((m) => m[1].replace(/^IPv6:/i, "").trim())
-    .find(isValidIP);
-  return bracketed || findIPs(fromClause)[0] || null;
+
+  const claimed = new Set(
+    [...fromClause.matchAll(/\b(?:helo|ehlo)\s*[=:\s]\s*\[?(?:IPv6:)?([0-9a-f.:]+)\]?/gi)]
+      .map((m) => m[1])
+      .filter(isValidIP),
+  );
+
+  const rank = (ip) =>
+    (isRoutableIP(ip) ? 0 : 1) + (claimed.has(ip) ? 2 : 0);
+
+  // findIPs validates every candidate and strips the "IPv6:" prefix MTAs write.
+  return findIPs(fromClause)
+    .map((ip, order) => ({ ip, order }))
+    .sort((a, b) => rank(a.ip) - rank(b.ip) || a.order - b.order)
+    .map((entry) => entry.ip);
+}
+
+/** The single best address of the host that sent a hop (see receivedFromIPs). */
+export function receivedFromIP(header) {
+  return receivedFromIPs(header)[0] || null;
 }
 
 /**

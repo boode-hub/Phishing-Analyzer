@@ -3161,3 +3161,11 @@ a.btn-ioc-lookup:hover {
 .panel-link:hover {
   text-decoration: underline;
 }
+
+
+/* The other addresses a hop recorded, beside the one used as the sender. */
+.hop-also {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-left: 0.35rem;
+}
